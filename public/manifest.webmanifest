@@ -1,0 +1,17 @@
+{
+  "name": "Ginga Studio · OS da agência",
+  "short_name": "Ginga Studio",
+  "description": "Comercial, projetos, aprovações e a IA Atlas — o cérebro da sua agência. Por GRP Tecnologia.",
+  "start_url": "/dashboard",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait-primary",
+  "background_color": "#101012",
+  "theme_color": "#101012",
+  "lang": "pt-BR",
+  "categories": ["business", "productivity"],
+  "icons": [
+    { "src": "/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" },
+    { "src": "/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "maskable" }
+  ]
+}
