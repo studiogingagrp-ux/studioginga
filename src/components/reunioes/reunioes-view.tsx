@@ -2,20 +2,48 @@
 
 import { useMemo, useState } from 'react'
 import {
-  Video, Plus, Check, Circle, Sparkles, Copy, MessageCircle, Clock, X,
+  Video, Plus, Check, Circle, Sparkles, Copy, MessageCircle, Clock, X, Repeat, CalendarPlus,
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
-import { GINGA_TEAM, memberOf } from '@/lib/demo/agency'
+import { GINGA_TEAM, GINGA_CLIENTS, memberOf, clientOf } from '@/lib/demo/agency'
+import {
+  Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription,
+} from '@/components/ui/sheet'
 
 interface AgendaItem { id: string; text: string; done: boolean }
 interface ActionItem { id: string; text: string; memberId: string }
 interface Meeting {
   id: string; title: string; client: string; time: string; date: string; phone: string
-  agenda: AgendaItem[]; notes: string; actions: ActionItem[]
+  agenda: AgendaItem[]; notes: string; actions: ActionItem[]; recur?: string
 }
 
 const uid = () => Math.random().toString(36).slice(2, 9)
+
+type Recorrencia = 'nenhuma' | 'semanal' | 'quinzenal' | 'mensal'
+const RECUR_OPTS: { id: Recorrencia; label: string }[] = [
+  { id: 'nenhuma',   label: 'Não repete' },
+  { id: 'semanal',   label: 'Toda semana' },
+  { id: 'quinzenal', label: 'A cada 15 dias' },
+  { id: 'mensal',    label: 'Todo mês' },
+]
+const WEEKDAYS = ['domingo', 'segunda-feira', 'terça-feira', 'quarta-feira', 'quinta-feira', 'sexta-feira', 'sábado']
+
+/** Gera as datas da série a partir da data inicial. */
+function buildSeries(startISO: string, recorrencia: Recorrencia, n: number): Date[] {
+  const base = new Date(`${startISO}T12:00:00`)
+  const out: Date[] = []
+  const count = recorrencia === 'nenhuma' ? 1 : n
+  for (let i = 0; i < count; i++) {
+    const d = new Date(base)
+    if (recorrencia === 'semanal') d.setDate(base.getDate() + i * 7)
+    else if (recorrencia === 'quinzenal') d.setDate(base.getDate() + i * 14)
+    else if (recorrencia === 'mensal') d.setMonth(base.getMonth() + i)
+    out.push(d)
+  }
+  return out
+}
+const fmtData = (d: Date) => d.toLocaleDateString('pt-BR', { day: '2-digit', month: 'short' })
 
 const SEED: Meeting[] = [
   {
@@ -51,7 +79,43 @@ export function ReunioesView() {
   const [ata, setAta] = useState<string | null>(null)
   const [gerando, setGerando] = useState(false)
 
-  const sel = meetings.find((m) => m.id === selId)!
+  // nova reunião (com recorrência)
+  const [novaOpen, setNovaOpen] = useState(false)
+  const hojeISO = new Date().toISOString().split('T')[0]
+  const [nf, setNf] = useState({ title: '', clientId: GINGA_CLIENTS[0]?.id ?? '', date: hojeISO, time: '10:00', recorrencia: 'semanal' as Recorrencia, ocorrencias: 4 })
+
+  function criarReuniao() {
+    if (!nf.title.trim()) { toast.error('Dê um título para a reunião'); return }
+    const c = clientOf(nf.clientId)
+    const datas = buildSeries(nf.date, nf.recorrencia, Math.max(1, Math.min(24, nf.ocorrencias)))
+    const diaSemana = WEEKDAYS[new Date(`${nf.date}T12:00:00`).getDay()]
+    const recurLabel =
+      nf.recorrencia === 'semanal'   ? `Toda ${diaSemana}` :
+      nf.recorrencia === 'quinzenal' ? `Quinzenal · ${diaSemana}` :
+      nf.recorrencia === 'mensal'    ? 'Todo mês' : undefined
+    const novas: Meeting[] = datas.map((d, i) => ({
+      id: uid(),
+      title: nf.title.trim(),
+      client: c?.name ?? '—',
+      phone: c?.phone ?? '',
+      time: nf.time,
+      date: i === 0 && d.toISOString().split('T')[0] === hojeISO ? 'Hoje' : fmtData(d),
+      agenda: [], notes: '', actions: [],
+      recur: recurLabel,
+    }))
+    setMeetings((prev) => [...novas, ...prev])
+    setSelId(novas[0].id)
+    setNovaOpen(false)
+    setAta(null)
+    setNf((f) => ({ ...f, title: '' }))
+    toast.success(
+      nf.recorrencia === 'nenhuma'
+        ? 'Reunião criada!'
+        : `Série criada — ${novas.length} encontros (${recurLabel?.toLowerCase()}) 🔁`,
+    )
+  }
+
+  const sel = meetings.find((m) => m.id === selId) ?? meetings[0]
 
   function patch(fn: (m: Meeting) => Meeting) {
     setMeetings((prev) => prev.map((m) => m.id === selId ? fn(m) : m))
@@ -86,16 +150,21 @@ export function ReunioesView() {
 
   return (
     <div className="mx-auto max-w-6xl space-y-6">
-      <header>
-        <p className="kicker text-brand">Operação</p>
-        <h1 className="mt-1.5 font-display text-3xl font-extrabold tracking-tight text-foreground">Reuniões</h1>
-        <p className="mt-1 text-sm text-muted-foreground">Pauta, anotações e próximos passos — e o Atlas escreve a ata pra você.</p>
+      <header className="flex flex-wrap items-end justify-between gap-4">
+        <div>
+          <p className="kicker text-brand">Operação</p>
+          <h1 className="mt-1.5 font-display text-3xl font-extrabold tracking-tight text-foreground">Reuniões</h1>
+          <p className="mt-1 text-sm text-muted-foreground">Pauta, anotações e próximos passos — e o Atlas escreve a ata pra você.</p>
+        </div>
+        <button onClick={() => setNovaOpen(true)} className="inline-flex h-10 items-center gap-2 rounded-xl bg-brand-gradient px-4 text-sm font-semibold text-brand-foreground shadow-gold transition-transform hover:scale-[1.02] active:scale-95">
+          <CalendarPlus className="size-4" /> Nova reunião
+        </button>
       </header>
 
       <div className="grid gap-6 lg:grid-cols-[280px_1fr]">
         {/* Lista */}
         <div className="space-y-2">
-          <p className="kicker px-1 text-muted-foreground/50">Hoje</p>
+          <p className="kicker px-1 text-muted-foreground/50">Agenda de reuniões</p>
           {meetings.map((m) => (
             <button key={m.id} onClick={() => { setSelId(m.id); setAta(null) }}
               className={cn('flex w-full items-center gap-3 rounded-2xl border p-3.5 text-left transition-all',
@@ -103,8 +172,13 @@ export function ReunioesView() {
               <span className="grid size-9 shrink-0 place-items-center rounded-xl bg-secondary text-brand"><Video className="size-4" /></span>
               <div className="min-w-0 flex-1">
                 <p className="truncate text-sm font-semibold text-foreground">{m.title}</p>
-                <p className="text-xs text-muted-foreground"><Clock className="mr-1 inline size-3" />{m.time} · {m.client}</p>
+                <p className="truncate text-xs text-muted-foreground"><Clock className="mr-1 inline size-3" />{m.date} · {m.time} · {m.client}</p>
               </div>
+              {m.recur && (
+                <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-brand/15 px-2 py-0.5 text-[10px] font-medium text-brand" title={m.recur}>
+                  <Repeat className="size-3" /> {m.recur.split(' ')[0]}
+                </span>
+              )}
             </button>
           ))}
         </div>
@@ -113,7 +187,14 @@ export function ReunioesView() {
         <div className="space-y-4">
           <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-border bg-card p-5 shadow-card">
             <div>
-              <h2 className="font-display text-lg font-bold text-foreground">{sel.title}</h2>
+              <div className="flex flex-wrap items-center gap-2">
+                <h2 className="font-display text-lg font-bold text-foreground">{sel.title}</h2>
+                {sel.recur && (
+                  <span className="inline-flex items-center gap-1 rounded-full bg-brand/15 px-2 py-0.5 text-[10px] font-semibold text-brand">
+                    <Repeat className="size-3" /> {sel.recur}
+                  </span>
+                )}
+              </div>
               <p className="text-sm text-muted-foreground">{sel.client} · {sel.date} às {sel.time}</p>
             </div>
             <a href="https://meet.google.com/" target="_blank" rel="noopener noreferrer" className="inline-flex h-10 items-center gap-2 rounded-xl bg-brand-gradient px-4 text-sm font-semibold text-brand-foreground shadow-gold">
@@ -190,9 +271,74 @@ export function ReunioesView() {
           </div>
         </div>
       </div>
+
+      {/* Nova reunião — com recorrência */}
+      <Sheet open={novaOpen} onOpenChange={setNovaOpen}>
+        <SheetContent side="right" className="w-full overflow-y-auto sm:max-w-md">
+          <SheetHeader className="border-b border-border">
+            <SheetTitle>Nova reunião</SheetTitle>
+            <SheetDescription>Agende um encontro único ou uma série que se repete — ex: toda sexta às 15h.</SheetDescription>
+          </SheetHeader>
+          <div className="space-y-4 px-4">
+            <label className="block">
+              <span className="mb-1.5 block text-xs font-medium text-muted-foreground">Título</span>
+              <input value={nf.title} onChange={(e) => setNf({ ...nf, title: e.target.value })} placeholder="Ex: Alinhamento semanal — Casa Lumen" className={ri} />
+            </label>
+            <label className="block">
+              <span className="mb-1.5 block text-xs font-medium text-muted-foreground">Cliente</span>
+              <select value={nf.clientId} onChange={(e) => setNf({ ...nf, clientId: e.target.value })} className={ri}>
+                {GINGA_CLIENTS.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+              </select>
+            </label>
+            <div className="grid grid-cols-2 gap-3">
+              <label className="block">
+                <span className="mb-1.5 block text-xs font-medium text-muted-foreground">Data de início</span>
+                <input type="date" value={nf.date} onChange={(e) => setNf({ ...nf, date: e.target.value })} className={ri} />
+              </label>
+              <label className="block">
+                <span className="mb-1.5 block text-xs font-medium text-muted-foreground">Horário</span>
+                <input type="time" value={nf.time} onChange={(e) => setNf({ ...nf, time: e.target.value })} className={ri} />
+              </label>
+            </div>
+
+            <div>
+              <span className="mb-1.5 flex items-center gap-1.5 text-xs font-medium text-muted-foreground"><Repeat className="size-3.5 text-brand" /> Repetir</span>
+              <div className="grid grid-cols-2 gap-2">
+                {RECUR_OPTS.map((o) => (
+                  <button key={o.id} onClick={() => setNf({ ...nf, recorrencia: o.id })}
+                    className={cn('rounded-xl border px-3 py-2.5 text-left text-sm font-medium transition-all',
+                      nf.recorrencia === o.id ? 'border-brand bg-brand/10 text-brand' : 'border-border bg-card text-muted-foreground hover:border-brand/30')}>
+                    {o.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {nf.recorrencia !== 'nenhuma' && (
+              <label className="block">
+                <span className="mb-1.5 block text-xs font-medium text-muted-foreground">Quantos encontros?</span>
+                <input type="number" min={2} max={24} value={nf.ocorrencias} onChange={(e) => setNf({ ...nf, ocorrencias: Number(e.target.value) })} className={ri} />
+                <span className="mt-1 block text-[11px] text-muted-foreground">
+                  {(() => {
+                    const dia = WEEKDAYS[new Date(`${nf.date}T12:00:00`).getDay()]
+                    const cada = nf.recorrencia === 'semanal' ? `toda ${dia}` : nf.recorrencia === 'quinzenal' ? `a cada 15 dias (${dia})` : 'todo mês'
+                    return `Cria ${Math.max(1, Math.min(24, nf.ocorrencias))} reuniões — ${cada} às ${nf.time}.`
+                  })()}
+                </span>
+              </label>
+            )}
+
+            <button onClick={criarReuniao} className="inline-flex h-11 w-full items-center justify-center gap-2 rounded-xl bg-brand-gradient text-sm font-semibold text-brand-foreground shadow-gold transition-transform hover:scale-[1.01] active:scale-95">
+              <CalendarPlus className="size-4" /> {nf.recorrencia === 'nenhuma' ? 'Agendar reunião' : 'Agendar série'}
+            </button>
+          </div>
+        </SheetContent>
+      </Sheet>
     </div>
   )
 }
+
+const ri = 'h-11 w-full rounded-xl border border-input bg-background px-3.5 text-sm text-foreground outline-none focus:ring-2 focus:ring-brand/30'
 
 function AddAction({ onAdd }: { onAdd: (text: string, memberId: string) => void }) {
   const [text, setText] = useState('')

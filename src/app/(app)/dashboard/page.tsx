@@ -11,6 +11,7 @@ import {
   PROJECT_STATUS_META, PRIORITY_META, APPROVAL_STATUS_META, ATLAS_SEVERITY_META,
   isLate,
 } from '@/lib/demo/agency'
+import { AtlasCopilot } from '@/components/dashboard/atlas-copilot'
 
 export const metadata: Metadata = { title: 'Comando' }
 export const dynamic = 'force-dynamic'
@@ -222,8 +223,18 @@ export default function DashboardPage() {
       </div>
 
       <p className="pt-2 text-center text-[11px] text-muted-foreground/50">
-        Ginga Studio OS · dados de demonstração · powered by Atlas · GRP Tecnologia
+        Ginga Studio OS · dados de demonstração · desenvolvido por GRP Tecnologia
       </p>
+
+      <AtlasCopilot
+        name="Estevam"
+        stats={{
+          reunioes: GINGA_AGENDA.length,
+          aprovacoes: aprovacoesPendentes.length,
+          atrasadas: tarefasAtrasadas.length,
+          semContato: semContato.length,
+        }}
+      />
     </div>
   )
 }
