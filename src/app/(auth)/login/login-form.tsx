@@ -46,18 +46,18 @@ export function LoginForm() {
       return
     }
 
-    // Lê o papel para roteamento no edge (proxy) e redireciona para a home certa.
+    // Lê papel + workspace para rotear (onboarding se ainda não tem agência).
     const { data: { user } } = await supabase.auth.getUser()
     const { data: profile } = await supabase
       .from('profiles')
-      .select('role')
+      .select('role, workspace_id')
       .eq('id', user?.id)
       .single()
 
     const role = profile?.role ?? 'membro'
     document.cookie = `${ROLE_COOKIE}=${role}; path=/; max-age=${60 * 60 * 24 * 7}; samesite=lax`
     toast.success('Bem-vindo!')
-    router.replace(homeForRole(role))
+    router.replace(profile?.workspace_id ? homeForRole(role) : '/onboarding')
     router.refresh()
   }
 

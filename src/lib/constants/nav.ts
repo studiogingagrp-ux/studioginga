@@ -1,7 +1,7 @@
 import {
   LayoutDashboard, CalendarDays, FolderKanban, KanbanSquare, BadgeCheck,
   Target, Users, TrendingUp, Wallet, Megaphone, MessageCircle, Sparkles,
-  UserCog, Settings, BarChart3, Zap, Video, Timer, MapPin, Plug, FileText, Sun,
+  UserCog, Settings, BarChart3, Zap, Video, Timer, MapPin, Plug, FileText, Sun, ShieldCheck,
   type LucideIcon,
 } from 'lucide-react'
 import type { Role } from '@/lib/constants/roles'
@@ -63,8 +63,9 @@ export const NAV_SECTIONS: NavSection[] = [
 ]
 
 export const NAV_FOOTER: NavItem[] = [
-  { href: '/equipe',        label: 'Equipe',        icon: UserCog,  roles: ['dono'] },
-  { href: '/integracoes',   label: 'Integrações',   icon: Plug,     roles: ['dono'] },
+  { href: '/equipe',        label: 'Equipe',        icon: UserCog,     roles: ['dono'] },
+  { href: '/usuarios',      label: 'Usuários',      icon: ShieldCheck, roles: ['dono'] },
+  { href: '/integracoes',   label: 'Integrações',   icon: Plug,        roles: ['dono'] },
   { href: '/configuracoes', label: 'Configurações', icon: Settings },
 ]
 

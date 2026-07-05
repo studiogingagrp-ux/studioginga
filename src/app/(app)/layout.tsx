@@ -1,3 +1,4 @@
+import { redirect } from 'next/navigation'
 import { AppShell } from '@/components/layout/app-shell'
 import { createClient } from '@/lib/supabase/server'
 import { isSupabaseConfigured } from '@/lib/supabase/client'
@@ -30,6 +31,9 @@ export default async function AppLayout({ children }: { children: React.ReactNod
       if (profile) {
         role = (profile.role as Role) ?? role
         name = profile.full_name || name
+
+        // Logado mas sem agência → completar onboarding do dono.
+        if (!profile.workspace_id) redirect('/onboarding')
 
         if (profile.workspace_id) {
           const [{ data: workspace }, { data: patData }] = await Promise.all([
