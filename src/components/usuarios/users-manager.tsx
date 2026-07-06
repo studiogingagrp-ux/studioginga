@@ -22,7 +22,7 @@ const INITIAL_DEMO: Member[] = [
   { id: 'u4', name: 'Camila Ortiz',    email: 'camila@gingastudio.net',  role: 'convidado', active: false },
 ]
 
-const ASSIGNABLE: Role[] = ['membro', 'convidado']
+const ASSIGNABLE: Role[] = ['dono', 'membro', 'convidado']
 const inputCls = 'h-11 w-full rounded-xl border border-input bg-card px-3.5 text-sm outline-none focus:ring-2 focus:ring-brand/30'
 
 const ROLE_TONE: Record<Role, string> = {
@@ -33,6 +33,7 @@ const ROLE_TONE: Record<Role, string> = {
 }
 
 const ROLE_HINT: Record<string, string> = {
+  dono:      'Dono / Sócio — acesso total: gerencia equipe, clientes e toda a operação.',
   membro:    'Colaborador — Meu Dia, tarefas, agenda e aprovações.',
   convidado: 'Convidado — acesso limitado, só o essencial.',
 }
@@ -193,7 +194,7 @@ export function UsersManager({ initialMembers, isRealData }: Props) {
                 </label>
                 <div>
                   <span className="mb-1.5 block text-xs font-medium text-muted-foreground">Permissão</span>
-                  <div className="grid grid-cols-2 gap-2">
+                  <div className="grid grid-cols-3 gap-2">
                     {ASSIGNABLE.map((r) => (
                       <button key={r} onClick={() => setForm({ ...form, role: r })}
                         className={cn(
