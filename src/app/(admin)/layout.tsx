@@ -1,18 +1,30 @@
 import { redirect } from 'next/navigation'
 import { AdminShell } from '@/components/admin/admin-shell'
 import { createClient } from '@/lib/supabase/server'
-import { isSupabaseConfigured } from '@/lib/supabase/client'
 
 export const dynamic = 'force-dynamic'
 
-export default async function AdminRootLayout({ children }: { children: React.ReactNode }) {
-  // Área do dono/GRP — protege os dados de cobrança: só super_admin logado entra.
-  if (isSupabaseConfigured()) {
+/** Área do dono/GRP — SEMPRE exige super_admin logado (protege dados de cobrança). */
+export async function requireSuperAdmin(): Promise<void> {
+  let isSuper = false
+  try {
     const supabase = await createClient()
     const { data: { user } } = await supabase.auth.getUser()
-    if (!user) redirect('/login')
-    const { data: profile } = await supabase.from('profiles').select('role').eq('id', user.id).single()
-    if (profile?.role !== 'super_admin') redirect('/login')
+    if (user) {
+      const { data: profile } = await supabase
+        .from('profiles')
+        .select('role')
+        .eq('id', user.id)
+        .single()
+      isSuper = profile?.role === 'super_admin'
+    }
+  } catch {
+    isSuper = false
   }
+  if (!isSuper) redirect('/login')
+}
+
+export default async function AdminRootLayout({ children }: { children: React.ReactNode }) {
+  await requireSuperAdmin()
   return <AdminShell>{children}</AdminShell>
 }

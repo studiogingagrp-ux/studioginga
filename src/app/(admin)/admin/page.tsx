@@ -2,6 +2,7 @@ import type { Metadata } from 'next'
 import { DollarSign, Users, CreditCard, AlertTriangle, ExternalLink, Repeat, TriangleAlert } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { getBillingOverview } from '@/lib/asaas'
+import { requireSuperAdmin } from '../layout'
 
 export const metadata: Metadata = { title: 'Cobranças · Super Admin' }
 export const dynamic = 'force-dynamic'
@@ -16,6 +17,7 @@ const STATUS: Record<string, { label: string; chip: string }> = {
 }
 
 export default async function AdminBilling() {
+  await requireSuperAdmin()
   const b = await getBillingOverview()
 
   const kpis = [
