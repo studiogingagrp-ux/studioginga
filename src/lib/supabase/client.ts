@@ -1,20 +1,23 @@
 import { createBrowserClient } from '@supabase/ssr'
 
-// Lê as variáveis públicas (inlined em build pelo Next).
-const PLACEHOLDER_URL = 'https://placeholder.supabase.co'
-const PLACEHOLDER_KEY = 'placeholder-key'
+// Valores PÚBLICOS (publishable) do Supabase da Ginga — seguros de expor
+// no navegador (é o propósito da chave publishable). Ficam hardcoded como
+// fallback pra blindar contra o cache de build da Vercel, que às vezes não
+// inlina as variáveis NEXT_PUBLIC_* (deixava o login travado em "modo demo").
+const DEFAULT_URL = 'https://dhpocnjuxcpkxhpnjaep.supabase.co'
+const DEFAULT_KEY = 'sb_publishable_FbRd4mEY54BeeVzJJGcR5Q_xW6kRaax'
 
-const RAW_URL = process.env.NEXT_PUBLIC_SUPABASE_URL || ''
-const RAW_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || ''
+const SUPABASE_URL =
+  process.env.NEXT_PUBLIC_SUPABASE_URL?.startsWith('http')
+    ? process.env.NEXT_PUBLIC_SUPABASE_URL
+    : DEFAULT_URL
 
-// URL válida como fallback para não quebrar a inicialização do módulo.
-const SUPABASE_URL = RAW_URL.startsWith('http') ? RAW_URL : PLACEHOLDER_URL
-const SUPABASE_KEY = RAW_KEY.length > 0 ? RAW_KEY : PLACEHOLDER_KEY
+const SUPABASE_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || DEFAULT_KEY
 
 export function createClient() {
   return createBrowserClient(SUPABASE_URL, SUPABASE_KEY)
 }
 
 export function isSupabaseConfigured(): boolean {
-  return SUPABASE_URL !== PLACEHOLDER_URL && SUPABASE_KEY !== PLACEHOLDER_KEY
+  return SUPABASE_URL.startsWith('http') && SUPABASE_KEY.length > 10
 }
