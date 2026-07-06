@@ -12,9 +12,9 @@ import { ROLE_COOKIE } from '@/lib/constants/roles'
 import { GrpCredit } from '@/components/brand/grp-credit'
 
 const NAV: { href: string; label: string; icon: LucideIcon }[] = [
-  { href: '/admin', label: 'Visão geral', icon: LayoutDashboard },
+  { href: '/admin', label: 'Cobranças', icon: CreditCard },
   { href: '/admin/empresas', label: 'Empresas', icon: Building2 },
-  { href: '/admin/planos', label: 'Planos', icon: CreditCard },
+  { href: '/admin/planos', label: 'Planos', icon: LayoutDashboard },
   { href: '/admin/logs', label: 'Logs & Monitor', icon: ScrollText },
 ]
 
