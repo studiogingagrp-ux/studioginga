@@ -1,42 +1,25 @@
-// Service worker — Ginga Studio OS (PWA)
-// v2: network-first pra nunca servir versão velha (evita cache preso do demo).
-const CACHE = 'ginga-v2'
-const APP_SHELL = ['/offline', '/manifest.webmanifest', '/icon.svg']
+// Service worker DESATIVADO (kill-switch).
+// Motivo: o cache do PWA estava servindo versões velhas presas nos
+// dispositivos (login quebrado). Este SW se autodestrói: limpa todos os
+// caches, se desregistra e recarrega a página — assim qualquer aparelho
+// com versão antiga se conserta sozinho ao abrir, sem limpar nada à mão.
 
-self.addEventListener('install', (event) => {
-  event.waitUntil(
-    caches.open(CACHE).then((c) => c.addAll(APP_SHELL)).then(() => self.skipWaiting()),
-  )
-})
+self.addEventListener('install', () => self.skipWaiting())
 
 self.addEventListener('activate', (event) => {
   event.waitUntil(
-    caches.keys()
-      .then((keys) => Promise.all(keys.filter((k) => k !== CACHE).map((k) => caches.delete(k))))
-      .then(() => self.clients.claim()),
+    (async () => {
+      try {
+        const keys = await caches.keys()
+        await Promise.all(keys.map((k) => caches.delete(k)))
+        await self.registration.unregister()
+        const clients = await self.clients.matchAll({ type: 'window' })
+        clients.forEach((c) => c.navigate(c.url))
+      } catch {
+        /* nada a fazer */
+      }
+    })(),
   )
 })
 
-self.addEventListener('fetch', (event) => {
-  const { request } = event
-  if (request.method !== 'GET') return
-
-  // Navegações: sempre rede (versão fresca), com fallback para a página offline.
-  if (request.mode === 'navigate') {
-    event.respondWith(fetch(request).catch(() => caches.match('/offline')))
-    return
-  }
-
-  // Demais GET: REDE PRIMEIRO (nunca serve build velho); cache só como backup offline.
-  event.respondWith(
-    fetch(request)
-      .then((res) => {
-        if (res.ok && new URL(request.url).origin === self.location.origin) {
-          const copy = res.clone()
-          caches.open(CACHE).then((c) => c.put(request, copy))
-        }
-        return res
-      })
-      .catch(() => caches.match(request)),
-  )
-})
+// Sem handler de fetch: nada é interceptado nem cacheado (vai sempre à rede).
