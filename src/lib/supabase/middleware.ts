@@ -2,8 +2,10 @@ import { createServerClient } from '@supabase/ssr'
 import { NextResponse, type NextRequest } from 'next/server'
 import { ROLE_COOKIE, homeForRole, type Role } from '@/lib/constants/roles'
 
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
-const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
+// Sanitiza contra caracteres não-ASCII que quebram os headers do fetch.
+const clean = (s: string) => s.replace(/[^\x20-\x7E]/g, '').trim()
+const supabaseUrl = clean(process.env.NEXT_PUBLIC_SUPABASE_URL || '') || 'https://dhpocnjuxcpkxhpnjaep.supabase.co'
+const supabaseKey = clean(process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '') || 'sb_publishable_FbRd4mEY54BeeVzJJGcR5Q_xW6kRaax'
 const isSupabaseConfigured = supabaseUrl?.startsWith('http') && !!supabaseKey
 
 // ─── Restrições de papel por prefixo de rota ─────────────────────────────────
@@ -33,8 +35,8 @@ export async function updateSession(request: NextRequest) {
   let supabaseResponse = NextResponse.next({ request })
 
   const supabase = createServerClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    supabaseUrl,
+    supabaseKey,
     {
       cookies: {
         getAll() {
