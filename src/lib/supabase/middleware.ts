@@ -62,6 +62,7 @@ export async function updateSession(request: NextRequest) {
   // Rotas públicas: APIs/webhooks, agendamento público do cliente por link, offline.
   const isPublicRoute =
     pathname.startsWith('/api') ||
+    pathname.startsWith('/auth') ||     // callback de link (convite/recuperação de senha)
     pathname.startsWith('/agendar') ||  // link público de agendamento por empresa
     pathname.startsWith('/portal') ||   // portal externo do cliente da agência
     pathname === '/offline' ||
