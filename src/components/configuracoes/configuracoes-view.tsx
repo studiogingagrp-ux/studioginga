@@ -2,9 +2,10 @@
 
 import { useState } from 'react'
 import { toast } from 'sonner'
-import { Palette, Globe, Clock, ImagePlus, Check, Building2 } from 'lucide-react'
+import { Palette, Globe, Clock, ImagePlus, Check, Building2, KeyRound, Eye, EyeOff, Loader2, ShieldCheck } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { LogoMark } from '@/components/brand/logo'
+import { createClient, isSupabaseConfigured } from '@/lib/supabase/client'
 
 const SWATCHES = ['#f2b23e', '#f0722a', '#e0245e', '#8b5cf6', '#0ea5e9', '#22c55e', '#eab308', '#ef4444']
 const IDIOMAS = [{ id: 'pt', label: 'Português', flag: '🇧🇷' }, { id: 'es', label: 'Español', flag: '🇲🇽' }, { id: 'en', label: 'English', flag: '🇺🇸' }]
@@ -110,12 +111,71 @@ export function ConfiguracoesView() {
         </div>
       </Section>
 
+      {/* Segurança — trocar senha */}
+      <Section icon={ShieldCheck} title="Segurança" sub="Sua conta">
+        <TrocarSenha />
+      </Section>
+
       <div className="flex justify-end">
         <button onClick={() => toast.success('Configurações salvas!')} className="inline-flex h-11 items-center gap-2 rounded-xl bg-brand-gradient px-6 text-sm font-semibold text-brand-foreground shadow-gold transition-transform hover:scale-[1.02] active:scale-95">
           <Check className="size-4" /> Salvar alterações
         </button>
       </div>
     </div>
+  )
+}
+
+function TrocarSenha() {
+  const [senha, setSenha] = useState('')
+  const [confirma, setConfirma] = useState('')
+  const [show, setShow] = useState(false)
+  const [loading, setLoading] = useState(false)
+
+  async function salvar() {
+    if (senha.length < 6) { toast.error('A senha precisa ter pelo menos 6 caracteres.'); return }
+    if (senha !== confirma) { toast.error('As senhas não coincidem.'); return }
+    if (!isSupabaseConfigured()) { toast.error('Indisponível no modo demo.'); return }
+    setLoading(true)
+    const { error } = await createClient().auth.updateUser({ password: senha })
+    setLoading(false)
+    if (error) { toast.error('Não foi possível trocar a senha.', { description: error.message }); return }
+    toast.success('Senha atualizada! 🔒')
+    setSenha(''); setConfirma('')
+  }
+
+  return (
+    <>
+      <p className="text-xs text-muted-foreground">Troque sua senha de acesso quando quiser. Você continua logado.</p>
+      <div className="grid gap-3 sm:grid-cols-2">
+        <Field label="Nova senha">
+          <div className="relative">
+            <input
+              type={show ? 'text' : 'password'} value={senha} onChange={(e) => setSenha(e.target.value)}
+              placeholder="Mínimo 6 caracteres"
+              className="h-11 w-full rounded-xl border border-input bg-background px-3.5 pr-10 text-sm text-foreground outline-none focus:ring-2 focus:ring-brand/30"
+            />
+            <button type="button" onClick={() => setShow((s) => !s)} className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground">
+              {show ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
+            </button>
+          </div>
+        </Field>
+        <Field label="Confirmar nova senha">
+          <input
+            type={show ? 'text' : 'password'} value={confirma} onChange={(e) => setConfirma(e.target.value)}
+            onKeyDown={(e) => { if (e.key === 'Enter') salvar() }}
+            placeholder="Repita a senha"
+            className="h-11 w-full rounded-xl border border-input bg-background px-3.5 text-sm text-foreground outline-none focus:ring-2 focus:ring-brand/30"
+          />
+        </Field>
+      </div>
+      <button
+        onClick={salvar}
+        disabled={loading}
+        className="inline-flex h-10 items-center justify-center gap-2 rounded-xl border border-brand/30 bg-brand/10 px-4 text-sm font-semibold text-brand transition-colors hover:bg-brand/20 disabled:opacity-60"
+      >
+        {loading ? <Loader2 className="size-4 animate-spin" /> : <><KeyRound className="size-4" /> Trocar senha</>}
+      </button>
+    </>
   )
 }
 
