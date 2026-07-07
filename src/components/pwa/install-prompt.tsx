@@ -61,7 +61,8 @@ export function InstallPrompt() {
 
   return (
     <>
-      <div className="animate-rise fixed inset-x-4 bottom-4 z-[120] sm:left-auto sm:right-4 sm:w-[340px]">
+      {/* z-40: fica ABAIXO de sheets/dialogs (z-50) pra nunca cobrir botões de formulário */}
+      <div className="animate-rise fixed inset-x-4 bottom-4 z-40 sm:left-auto sm:right-4 sm:w-[340px]">
         <div className="ginga-glow overflow-hidden rounded-2xl border border-brand/30 bg-card/95 p-4 shadow-pop backdrop-blur-xl">
           <button onClick={dismiss} aria-label="Fechar" className="absolute right-2.5 top-2.5 grid size-7 place-items-center rounded-lg text-muted-foreground transition-colors hover:bg-white/10">
             <X className="size-4" />

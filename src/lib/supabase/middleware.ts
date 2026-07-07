@@ -19,20 +19,22 @@ const RESTRICTED_TO: Record<string, Role[]> = {
   '/campanhas':     ['dono', 'membro'],
   '/conteudo':      ['dono', 'membro'],
   '/clientes':      ['dono', 'membro'],
-  '/whatsapp':      ['dono'],
-  '/agendamento':   ['dono'],
-  '/automacoes':    ['dono'],
-  '/equipe':        ['dono'],
   // /configuracoes aberto a todos os papéis internos: é lá que o colaborador
   // troca a própria senha (a seção de marca fica oculta pra quem não é dono).
   '/usuarios':      ['dono'],
   '/financeiro':    ['dono'],
   '/comercial':     ['dono'],
   '/propostas':     ['dono'],
-  '/relatorios':    ['dono'],
-  '/growth':        ['dono'],
-  '/integracoes':   ['dono'],
 }
+
+// Telas demonstrativas herdadas — SEM backend real. Fora da nav e, aqui,
+// fora do ar: qualquer acesso direto volta pra home do papel.
+// Voltam ao produto quando forem construídas de verdade.
+const LEGACY_DEMO_ROUTES = [
+  '/tempo', '/check-in', '/growth', '/whatsapp', '/relatorios', '/automacoes',
+  '/reunioes', '/equipe', '/integracoes', '/pipeline', '/campanhas',
+  '/centro-conhecimento', '/agendamento',
+]
 
 export async function updateSession(request: NextRequest) {
   if (!isSupabaseConfigured) {
@@ -90,6 +92,13 @@ export async function updateSession(request: NextRequest) {
 
   // Autenticado em rota de auth → sua home
   if (user && isAuthRoute) {
+    const url = request.nextUrl.clone()
+    url.pathname = homeForRole(role)
+    return NextResponse.redirect(url)
+  }
+
+  // Telas demonstrativas herdadas: fora do ar até serem reais.
+  if (user && LEGACY_DEMO_ROUTES.some((p) => pathname === p || pathname.startsWith(`${p}/`))) {
     const url = request.nextUrl.clone()
     url.pathname = homeForRole(role)
     return NextResponse.redirect(url)

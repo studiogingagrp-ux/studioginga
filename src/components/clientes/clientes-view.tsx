@@ -127,8 +127,9 @@ export function ClientesView({ initialClients, isRealData }: { initialClients: C
                 </div>
 
                 <div className="mt-3 flex items-center gap-2">
-                  <EnviarPortal name={c.name} contact={c.contact || c.name} phone={c.phone} slug={slugify(c.name)} />
-                  <Link href={`/portal/${slugify(c.name)}`} target="_blank" className="grid size-9 place-items-center rounded-xl border border-border bg-secondary text-foreground transition-colors hover:bg-white/10" title="Ver portal">
+                  {/* Em modo real o token do portal é o UUID do cliente (não-enumerável) */}
+                  <EnviarPortal name={c.name} contact={c.contact || c.name} phone={c.phone} slug={isRealData ? c.id : slugify(c.name)} />
+                  <Link href={`/portal/${isRealData ? c.id : slugify(c.name)}`} target="_blank" className="grid size-9 place-items-center rounded-xl border border-border bg-secondary text-foreground transition-colors hover:bg-white/10" title="Ver portal">
                     <ExternalLink className="size-4" />
                   </Link>
                   <button onClick={() => openEdit(c)} className="grid size-9 place-items-center rounded-xl border border-border bg-secondary text-foreground transition-colors hover:bg-white/10" title="Editar">
