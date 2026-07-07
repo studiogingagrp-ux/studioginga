@@ -128,8 +128,8 @@ export function ConfiguracoesView({ initialName, initialColor, isRealData }: { i
       </Section>
 
       <div className="flex justify-end">
-        <button onClick={() => toast.success('Configurações salvas!')} className="inline-flex h-11 items-center gap-2 rounded-xl bg-brand-gradient px-6 text-sm font-semibold text-brand-foreground shadow-gold transition-transform hover:scale-[1.02] active:scale-95">
-          <Check className="size-4" /> Salvar alterações
+        <button onClick={salvar} disabled={saving} className="inline-flex h-11 items-center gap-2 rounded-xl bg-brand-gradient px-6 text-sm font-semibold text-brand-foreground shadow-gold transition-transform hover:scale-[1.02] active:scale-95 disabled:opacity-60">
+          {saving ? <Loader2 className="size-4 animate-spin" /> : <><Check className="size-4" /> Salvar alterações</>}
         </button>
       </div>
     </div>
