@@ -5,12 +5,15 @@ import Link from 'next/link'
 import {
   CheckCircle2, Circle, Clock, CalendarDays, BadgeCheck, Flame, ArrowRight, PartyPopper,
 } from 'lucide-react'
+import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
 import {
   GINGA_TASKS, GINGA_AGENDA, GINGA_APPROVALS, GINGA_PROJECTS,
   clientOf, demoToday, isLate,
   PRIORITY_META, OP_STATUS_META, OP_TYPE_META, APPROVAL_STATUS_META, APPROVAL_TYPE_META,
 } from '@/lib/demo/agency'
+import { moveTask } from '@/lib/actions/tasks'
+import type { OpTaskStatus, OpTaskType, Priority, ApprovalStatus, ApprovalType } from '@/types/database'
 
 const KIND_META: Record<string, { emoji: string; label: string }> = {
   reuniao:  { emoji: '🤝', label: 'Reunião' },
@@ -18,58 +21,89 @@ const KIND_META: Record<string, { emoji: string; label: string }> = {
   gravacao: { emoji: '🎬', label: 'Gravação' },
   call:     { emoji: '📞', label: 'Call' },
   interno:  { emoji: '⚙️', label: 'Interno' },
+  consulta: { emoji: '🤝', label: 'Reunião' },
+  retorno:  { emoji: '📞', label: 'Call' },
 }
 
-function dueLabel(due: string): { text: string; tone: string } {
-  const today = demoToday()
+export interface MyTask { id: string; title: string; clientName: string; type: OpTaskType; status: OpTaskStatus; priority: Priority; due: string | null }
+export interface MyEvent { id: string; time: string; title: string; clientName: string | null; kind: string }
+export interface MyApproval { id: string; title: string; clientName: string; type: ApprovalType; status: ApprovalStatus; version: number }
+
+function dueLabel(due: string | null, today: string): { text: string; tone: string } {
+  if (!due) return { text: '—', tone: 'text-muted-foreground' }
   if (due < today) return { text: 'Atrasada', tone: 'text-rose-300' }
   if (due === today) return { text: 'Hoje', tone: 'text-amber-300' }
   const d = Math.round((new Date(due).getTime() - new Date(today).getTime()) / 86400000)
   return { text: `em ${d}d`, tone: 'text-muted-foreground' }
 }
 
-export function MeuDiaView({ name, memberId }: { name: string; memberId: string }) {
+function demoData(memberId: string): { tasks: MyTask[]; agenda: MyEvent[]; approvals: MyApproval[] } {
+  const myProjectIds = GINGA_PROJECTS.filter((p) => p.leadId === memberId || p.teamIds.includes(memberId)).map((p) => p.id)
+  return {
+    tasks: GINGA_TASKS.filter((t) => t.memberId === memberId).map((t) => ({
+      id: t.id, title: t.title, clientName: clientOf(t.clientId)?.name ?? '—', type: t.type, status: t.status, priority: t.priority, due: t.due,
+    })),
+    agenda: GINGA_AGENDA.filter((a) => a.memberId === memberId).map((a) => ({
+      id: a.id, time: a.time, title: a.title, clientName: clientOf(a.clientId)?.name ?? null, kind: a.kind,
+    })),
+    approvals: GINGA_APPROVALS.filter((a) => a.projectId && myProjectIds.includes(a.projectId) && a.status !== 'aprovado' && a.status !== 'finalizado').map((a) => ({
+      id: a.id, title: a.title, clientName: clientOf(a.clientId)?.name ?? '—', type: a.type, status: a.status, version: a.version,
+    })),
+  }
+}
+
+export function MeuDiaView({ name, memberId, initialTasks, initialAgenda, initialApprovals, isRealData }: {
+  name: string
+  memberId: string
+  initialTasks?: MyTask[] | null
+  initialAgenda?: MyEvent[] | null
+  initialApprovals?: MyApproval[] | null
+  isRealData?: boolean
+}) {
+  const demo = useMemo(() => isRealData ? null : demoData(memberId), [isRealData, memberId])
+  const baseTasks = initialTasks ?? demo?.tasks ?? []
+  const agenda = initialAgenda ?? demo?.agenda ?? []
+  const approvals = initialApprovals ?? demo?.approvals ?? []
+
   const firstName = name.split(' ')[0]
   const hour = new Date().getHours()
   const saud = hour < 12 ? 'Bom dia' : hour < 18 ? 'Boa tarde' : 'Boa noite'
   const hoje = new Date().toLocaleDateString('pt-BR', { weekday: 'long', day: 'numeric', month: 'long' })
+  const today = isRealData ? new Date().toISOString().split('T')[0] : demoToday()
 
-  const myProjectIds = useMemo(
-    () => GINGA_PROJECTS.filter((p) => p.leadId === memberId || p.teamIds.includes(memberId)).map((p) => p.id),
-    [memberId],
-  )
-  const baseTasks = useMemo(() => GINGA_TASKS.filter((t) => t.memberId === memberId), [memberId])
-  const agenda = useMemo(() => GINGA_AGENDA.filter((a) => a.memberId === memberId), [memberId])
-  const approvals = useMemo(
-    () => GINGA_APPROVALS.filter((a) => a.projectId && myProjectIds.includes(a.projectId) && a.status !== 'aprovado' && a.status !== 'finalizado'),
-    [myProjectIds],
-  )
-
-  // estado local de conclusão (marca como feito na hora)
+  // conclusão: otimista na UI + persiste no banco em modo real
   const [done, setDone] = useState<Record<string, boolean>>(
     Object.fromEntries(baseTasks.filter((t) => t.status === 'concluido').map((t) => [t.id, true])),
   )
-  const toggle = (id: string) => setDone((d) => ({ ...d, [id]: !d[id] }))
+  function toggle(id: string) {
+    const next = !done[id]
+    setDone((d) => ({ ...d, [id]: next }))
+    if (isRealData) {
+      moveTask(id, next ? 'concluido' : 'a_fazer').then((r) => {
+        if (r.error) { toast.error(r.error); setDone((d) => ({ ...d, [id]: !next })) }
+      })
+    }
+  }
 
   const tasks = useMemo(
     () => [...baseTasks].sort((a, b) => {
       const da = done[a.id] ? 1 : 0, db = done[b.id] ? 1 : 0
       if (da !== db) return da - db
-      return a.due.localeCompare(b.due)
+      return (a.due ?? '9999').localeCompare(b.due ?? '9999')
     }),
     [baseTasks, done],
   )
 
   const total = baseTasks.length
   const feitas = baseTasks.filter((t) => done[t.id]).length
-  const atrasadas = baseTasks.filter((t) => !done[t.id] && isLate(t.due)).length
+  const atrasadas = baseTasks.filter((t) => !done[t.id] && t.due && (isRealData ? t.due < today : isLate(t.due))).length
   const pct = total ? Math.round((feitas / total) * 100) : 0
 
   return (
     <div className="mx-auto max-w-5xl space-y-6">
       {/* Saudação */}
       <header className="overflow-hidden rounded-3xl border border-border bg-gradient-to-br from-card to-background p-6 shadow-card">
-        <p className="kicker text-brand">{hoje}</p>
+        <p className="kicker text-brand">{hoje}{!isRealData && ' · demo'}</p>
         <h1 className="mt-1.5 font-display text-3xl font-extrabold tracking-tight text-foreground">
           {saud}, {firstName}. <span className="text-brand">Bora girar? 🌀</span>
         </h1>
@@ -80,7 +114,6 @@ export function MeuDiaView({ name, memberId }: { name: string; memberId: string 
               ? <>Tudo em dia por aqui. Você é fera! 🔥</>
               : <>{total - feitas} tarefa{total - feitas !== 1 ? 's' : ''} no seu foco de hoje. Uma de cada vez.</>}
         </p>
-        {/* barra de progresso do dia */}
         <div className="mt-4 flex items-center gap-3">
           <div className="h-2 flex-1 overflow-hidden rounded-full bg-secondary">
             <div className="h-full rounded-full bg-brand-gradient transition-all duration-500" style={{ width: `${pct}%` }} />
@@ -105,9 +138,8 @@ export function MeuDiaView({ name, memberId }: { name: string; memberId: string 
           <div className="space-y-2">
             {tasks.map((t) => {
               const isDone = !!done[t.id]
-              const c = clientOf(t.clientId)
-              const dl = dueLabel(t.due)
-              const type = OP_TYPE_META[t.type]
+              const dl = dueLabel(t.due, today)
+              const type = OP_TYPE_META[t.type] ?? OP_TYPE_META.arte
               return (
                 <button
                   key={t.id}
@@ -124,7 +156,7 @@ export function MeuDiaView({ name, memberId }: { name: string; memberId: string 
                     <p className={cn('truncate text-sm font-medium', isDone ? 'text-muted-foreground line-through' : 'text-foreground')}>
                       <span className="mr-1">{type.emoji}</span>{t.title}
                     </p>
-                    <p className="truncate text-xs text-muted-foreground">{c?.name} · {OP_STATUS_META[t.status].label}</p>
+                    <p className="truncate text-xs text-muted-foreground">{t.clientName} · {(OP_STATUS_META[t.status] ?? OP_STATUS_META.a_fazer).label}</p>
                   </div>
                   {!isDone && (
                     <>
@@ -139,7 +171,7 @@ export function MeuDiaView({ name, memberId }: { name: string; memberId: string 
             })}
             {total === 0 && (
               <div className="rounded-2xl border border-dashed border-border p-8 text-center text-sm text-muted-foreground">
-                <PartyPopper className="mx-auto mb-2 size-6 text-brand" /> Nenhuma tarefa atribuída. Aproveite! 🎉
+                <PartyPopper className="mx-auto mb-2 size-6 text-brand" /> Nenhuma tarefa atribuída a você. Aproveite! 🎉
               </div>
             )}
           </div>
@@ -154,13 +186,12 @@ export function MeuDiaView({ name, memberId }: { name: string; memberId: string 
             <div className="space-y-2">
               {agenda.map((a) => {
                 const k = KIND_META[a.kind] ?? KIND_META.interno
-                const c = clientOf(a.clientId)
                 return (
                   <div key={a.id} className="flex items-center gap-3 rounded-2xl border border-border bg-card p-3 shadow-card">
                     <span className="font-mono text-sm font-bold text-brand tabular">{a.time}</span>
                     <div className="min-w-0 flex-1">
                       <p className="truncate text-sm font-medium text-foreground">{k.emoji} {a.title}</p>
-                      {c && <p className="truncate text-xs text-muted-foreground">{c.name}</p>}
+                      {a.clientName && <p className="truncate text-xs text-muted-foreground">{a.clientName}</p>}
                     </div>
                   </div>
                 )
@@ -177,14 +208,14 @@ export function MeuDiaView({ name, memberId }: { name: string; memberId: string 
             </h2>
             <div className="space-y-2">
               {approvals.map((a) => {
-                const c = clientOf(a.clientId)
-                const st = APPROVAL_STATUS_META[a.status]
+                const st = APPROVAL_STATUS_META[a.status] ?? APPROVAL_STATUS_META.enviado
+                const ty = APPROVAL_TYPE_META[a.type] ?? APPROVAL_TYPE_META.arte
                 return (
                   <Link key={a.id} href="/aprovacoes" className="flex items-center gap-3 rounded-2xl border border-border bg-card p-3 shadow-card transition-colors hover:border-brand/30">
-                    <span className="text-xl">{APPROVAL_TYPE_META[a.type].emoji}</span>
+                    <span className="text-xl">{ty.emoji}</span>
                     <div className="min-w-0 flex-1">
                       <p className="truncate text-sm font-medium text-foreground">{a.title}</p>
-                      <p className="truncate text-xs text-muted-foreground">{c?.name} · v{a.version}</p>
+                      <p className="truncate text-xs text-muted-foreground">{a.clientName} · v{a.version}</p>
                     </div>
                     <span className={cn('inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-medium', st.chip)}>
                       <span className={cn('size-1.5 rounded-full', st.dot)} />{st.label}

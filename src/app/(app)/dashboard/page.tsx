@@ -4,14 +4,12 @@ import {
   Sparkles, Users, FolderKanban, BadgeCheck, AlarmClock, Wallet, Target,
   ArrowUpRight, Clock, ChevronRight, Flame,
 } from 'lucide-react'
-import { cn } from '@/lib/utils'
-import {
-  GINGA_CLIENTS, GINGA_PROJECTS, GINGA_APPROVALS, GINGA_TASKS, GINGA_LEADS,
-  GINGA_AGENDA, GINGA_ALERTS, mx, memberOf, clientOf,
-  PROJECT_STATUS_META, PRIORITY_META, APPROVAL_STATUS_META, ATLAS_SEVERITY_META,
-  isLate,
-} from '@/lib/demo/agency'
+import { cn, getInitials } from '@/lib/utils'
+import { mx, PROJECT_STATUS_META, PRIORITY_META, APPROVAL_STATUS_META } from '@/lib/demo/agency'
 import { AtlasCopilot } from '@/components/dashboard/atlas-copilot'
+import { isSupabaseConfigured } from '@/lib/supabase/client'
+import { createClient } from '@/lib/supabase/server'
+import type { Priority, ProjectStatus, ApprovalStatus } from '@/types/database'
 
 export const metadata: Metadata = { title: 'Comando' }
 export const dynamic = 'force-dynamic'
@@ -23,34 +21,129 @@ function greeting() {
 
 const KIND_EMOJI: Record<string, string> = {
   reuniao: '🤝', entrega: '📦', gravacao: '🎬', call: '📞', interno: '🏢',
+  consulta: '🤝', retorno: '📞', encaixe: '🤝', pessoal: '🏢',
+}
+const COLORS = ['#f2b23e', '#f0722a', '#38bdf8', '#a78bfa', '#34d399', '#fb7185']
+
+interface Snapshot {
+  firstName: string
+  clientesAtivos: number; clientesTotal: number; mrr: number
+  projetosAtivos: number
+  projetosFoco: { id: string; name: string; clientName: string; status: ProjectStatus; priority: Priority; progress: number; deadline: string | null; late: boolean }[]
+  aprovacoesPendentes: { id: string; title: string; clientName: string; status: ApprovalStatus; version: number }[]
+  tarefasAtrasadas: number
+  pipelineCount: number; pipelineValor: number
+  agenda: { id: string; time: string; title: string; who: string; kind: string; memberName: string | null; memberColor: string | null }[]
+  alertas: { id: string; title: string; body: string; href: string; dot: string }[]
 }
 
-export default function DashboardPage() {
-  const clientesAtivos = GINGA_CLIENTS.filter((c) => c.status === 'ativo')
-  const projetosAtivos = GINGA_PROJECTS.filter((p) => !['finalizado', 'pausado'].includes(p.status))
-  const aprovacoesPendentes = GINGA_APPROVALS.filter((a) => a.status === 'enviado' || a.status === 'reenviado' || a.status === 'alteracao')
-  const tarefasAtrasadas = GINGA_TASKS.filter((t) => t.status !== 'concluido' && isLate(t.due))
-  const mrr = clientesAtivos.reduce((s, c) => s + c.monthly, 0)
-  const pipeline = GINGA_LEADS.filter((l) => l.stage === 'proposta' || l.stage === 'negociacao')
-  const pipelineValor = pipeline.reduce((s, l) => s + l.value, 0)
-  const semContato = GINGA_CLIENTS.filter((c) => c.lastContactDays >= 14)
-  const alertasUrgentes = GINGA_ALERTS.filter((a) => a.severity === 'urgente')
+async function loadSnapshot(): Promise<Snapshot | null> {
+  if (!isSupabaseConfigured()) return null
+  try {
+    const supabase = await createClient()
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) return null
 
-  const projetosFoco = [...projetosAtivos]
-    .sort((a, b) => a.deadline.localeCompare(b.deadline))
-    .slice(0, 4)
+    const today = new Date().toISOString().split('T')[0]
+    const [{ data: me }, { data: cls }, { data: prjs }, { data: apps }, { data: tks }, { data: lds }, { data: evs }, { data: mbs }] = await Promise.all([
+      supabase.from('profiles').select('full_name').eq('id', user.id).single(),
+      supabase.from('clients').select('id, full_name, extra'),
+      supabase.from('projects').select('id, name, client_id, status, priority, progress, deadline').order('deadline', { ascending: true, nullsFirst: false }),
+      supabase.from('approvals').select('id, title, client_id, status, version').order('created_at', { ascending: false }),
+      supabase.from('op_tasks').select('id, status, due_date'),
+      supabase.from('leads').select('id, value, stage'),
+      supabase.from('events').select('id, starts_at, title, type, member_id, client_id').gte('starts_at', `${today}T00:00:00`).lte('starts_at', `${today}T23:59:59`).order('starts_at'),
+      supabase.from('profiles').select('id, full_name, agenda_color').in('role', ['dono', 'membro']),
+    ])
+
+    const clientName = new Map((cls ?? []).map((c) => [c.id as string, (c.full_name as string) ?? '—']))
+    const memberById = new Map((mbs ?? []).map((m, i) => [m.id as string, { name: (m.full_name as string) ?? '—', color: ((m.agenda_color as string | null) ?? COLORS[i % COLORS.length]) }]))
+
+    let mrr = 0; let ativos = 0
+    for (const c of cls ?? []) {
+      const extra = (c.extra as Record<string, unknown> | null) ?? {}
+      if (((extra.status as string) ?? 'ativo') === 'ativo') { ativos++; mrr += Number(extra.monthly) || 0 }
+    }
+
+    const projAtivos = (prjs ?? []).filter((p) => !['finalizado', 'pausado'].includes(p.status as string))
+    const projetosFoco = projAtivos.slice(0, 4).map((p) => ({
+      id: p.id as string,
+      name: (p.name as string) ?? '—',
+      clientName: clientName.get(p.client_id as string) ?? 'Interno',
+      status: (p.status as ProjectStatus) ?? 'producao',
+      priority: (p.priority as Priority) ?? 'media',
+      progress: Number(p.progress) || 0,
+      deadline: (p.deadline as string | null),
+      late: !!p.deadline && (p.deadline as string) < today,
+    }))
+
+    const aprovPend = (apps ?? []).filter((a) => ['enviado', 'reenviado', 'alteracao'].includes(a.status as string))
+    const tarefasAtrasadas = (tks ?? []).filter((t) => t.status !== 'concluido' && t.due_date && (t.due_date as string) < today).length
+    const pipeline = (lds ?? []).filter((l) => ['proposta', 'negociacao'].includes(l.stage as string))
+    const pipelineValor = pipeline.reduce((s, l) => s + (Number(l.value) || 0), 0)
+
+    const agenda = (evs ?? []).map((e) => {
+      const m = memberById.get(e.member_id as string)
+      return {
+        id: e.id as string,
+        time: new Date(e.starts_at as string).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }),
+        title: (e.title as string) || 'Compromisso',
+        who: clientName.get(e.client_id as string) ?? 'Interno',
+        kind: (e.type as string) ?? 'reuniao',
+        memberName: m?.name ?? null,
+        memberColor: m?.color ?? null,
+      }
+    })
+
+    const alertas: Snapshot['alertas'] = []
+    if (tarefasAtrasadas > 0) alertas.push({ id: 'al1', title: `${tarefasAtrasadas} tarefa(s) atrasada(s)`, body: 'Passaram do prazo na Operação — redistribua ou renegocie.', href: '/operacao', dot: 'bg-rose-400' })
+    if (aprovPend.length > 0) alertas.push({ id: 'al2', title: `${aprovPend.length} aprovações paradas`, body: 'Materiais aguardando o aval do cliente na Central.', href: '/aprovacoes', dot: 'bg-orange-400' })
+    if (pipeline.length > 0) alertas.push({ id: 'al3', title: `${mx(pipelineValor)}/mês em negociação`, body: `${pipeline.length} lead(s) em proposta/negociação — hora de fechar.`, href: '/comercial', dot: 'bg-emerald-400' })
+    if (!alertas.length) alertas.push({ id: 'al0', title: 'Operação em dia', body: 'Nada urgente agora. Que tal prospectar ou planejar conteúdo?', href: '/comercial', dot: 'bg-emerald-400' })
+
+    return {
+      firstName: ((me?.full_name as string) ?? 'Dono').split(' ')[0],
+      clientesAtivos: ativos,
+      clientesTotal: (cls ?? []).length,
+      mrr,
+      projetosAtivos: projAtivos.length,
+      projetosFoco,
+      aprovacoesPendentes: aprovPend.slice(0, 4).map((a) => ({ id: a.id as string, title: (a.title as string) ?? '—', clientName: clientName.get(a.client_id as string) ?? '—', status: (a.status as ApprovalStatus) ?? 'enviado', version: Number(a.version) || 1 })),
+      tarefasAtrasadas,
+      pipelineCount: pipeline.length,
+      pipelineValor,
+      agenda,
+      alertas,
+    }
+  } catch {
+    return null
+  }
+}
+
+export default async function DashboardPage() {
+  const s = await loadSnapshot()
+
+  const dateLabel = new Intl.DateTimeFormat('pt-BR', { weekday: 'long', day: 'numeric', month: 'long' }).format(new Date())
+
+  if (!s) {
+    // Sem sessão/conexão: estado neutro (o middleware já manda pro /login em produção)
+    return (
+      <div className="mx-auto max-w-6xl py-20 text-center">
+        <p className="kicker text-brand">Comando</p>
+        <h1 className="mt-2 font-display text-2xl font-extrabold text-foreground">Conectando ao seu workspace…</h1>
+        <p className="mt-2 text-sm text-muted-foreground">Se esta tela persistir, <Link href="/login" className="text-brand underline">entre novamente</Link>.</p>
+      </div>
+    )
+  }
 
   const kpis = [
-    { label: 'Clientes ativos',    value: String(clientesAtivos.length), sub: `${GINGA_CLIENTS.length} no total`, icon: Users,       href: '/clientes',   tone: 'text-foreground' },
-    { label: 'Projetos ativos',    value: String(projetosAtivos.length), sub: 'em andamento',                    icon: FolderKanban, href: '/projetos',   tone: 'text-foreground' },
-    { label: 'Aprovações',         value: String(aprovacoesPendentes.length), sub: 'aguardando ação',            icon: BadgeCheck,   href: '/aprovacoes', tone: 'text-sky-300' },
-    { label: 'Tarefas atrasadas',  value: String(tarefasAtrasadas.length), sub: tarefasAtrasadas.length ? 'precisam de você' : 'em dia', icon: AlarmClock, href: '/operacao', tone: tarefasAtrasadas.length ? 'text-rose-300' : 'text-emerald-300' },
-    { label: 'Receita prevista',   value: mx(mrr), sub: 'contratos / mês', icon: Wallet,  href: '/financeiro', tone: 'text-brand', big: true },
-    { label: 'Pipeline aberto',    value: mx(pipelineValor), sub: `${pipeline.length} propostas`, icon: Target, href: '/comercial', tone: 'text-emerald-300', big: true },
+    { label: 'Clientes ativos',   value: String(s.clientesAtivos), sub: `${s.clientesTotal} no total`, icon: Users,        href: '/clientes',   tone: 'text-foreground' },
+    { label: 'Projetos ativos',   value: String(s.projetosAtivos), sub: 'em andamento',                icon: FolderKanban, href: '/projetos',   tone: 'text-foreground' },
+    { label: 'Aprovações',        value: String(s.aprovacoesPendentes.length), sub: 'aguardando ação', icon: BadgeCheck,   href: '/aprovacoes', tone: 'text-sky-300' },
+    { label: 'Tarefas atrasadas', value: String(s.tarefasAtrasadas), sub: s.tarefasAtrasadas ? 'precisam de você' : 'em dia', icon: AlarmClock, href: '/operacao', tone: s.tarefasAtrasadas ? 'text-rose-300' : 'text-emerald-300' },
+    { label: 'Receita prevista',  value: mx(s.mrr), sub: 'contratos / mês',   icon: Wallet, href: '/financeiro', tone: 'text-brand', big: true },
+    { label: 'Pipeline aberto',   value: mx(s.pipelineValor), sub: `${s.pipelineCount} em negociação`, icon: Target, href: '/comercial', tone: 'text-emerald-300', big: true },
   ]
-
-  const dateLabel = new Intl.DateTimeFormat('pt-BR', { weekday: 'long', day: 'numeric', month: 'long' })
-    .format(new Date())
 
   return (
     <div className="mx-auto max-w-6xl space-y-7">
@@ -59,7 +152,7 @@ export default function DashboardPage() {
         <div>
           <p className="kicker text-brand">Comando</p>
           <h1 className="mt-1.5 font-display text-3xl font-extrabold tracking-tight text-foreground">
-            {greeting()}, Estevam.
+            {greeting()}, {s.firstName}.
           </h1>
           <p className="mt-1 text-sm capitalize text-muted-foreground">{dateLabel} · Ginga Studio</p>
         </div>
@@ -73,124 +166,123 @@ export default function DashboardPage() {
         </div>
       </div>
 
-      {/* Briefing do Atlas — o cérebro */}
+      {/* Briefing do Atlas */}
       <AtlasBriefing
-        reunioes={GINGA_AGENDA.length}
-        aprovacoes={aprovacoesPendentes.length}
-        atrasadas={tarefasAtrasadas.length}
-        semContato={semContato.length}
-        urgente={alertasUrgentes[0]?.body ?? null}
+        name={s.firstName}
+        reunioes={s.agenda.length}
+        aprovacoes={s.aprovacoesPendentes.length}
+        atrasadas={s.tarefasAtrasadas}
       />
 
       {/* KPIs */}
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
         {kpis.map((k) => (
-          <Link
-            key={k.label}
-            href={k.href}
-            className="group animate-rise relative overflow-hidden rounded-2xl border border-border bg-card p-5 shadow-card transition-all hover:-translate-y-0.5 hover:border-brand/30"
-          >
+          <Link key={k.label} href={k.href} className="group animate-rise relative overflow-hidden rounded-2xl border border-border bg-card p-5 shadow-card transition-all hover:-translate-y-0.5 hover:border-brand/30">
             <div className="flex items-center justify-between">
               <span className="grid size-9 place-items-center rounded-xl bg-secondary text-muted-foreground">
                 <k.icon className="size-[18px]" />
               </span>
               <ArrowUpRight className="size-4 text-muted-foreground/30 transition-colors group-hover:text-brand" />
             </div>
-            <p className={cn('mt-4 font-display font-extrabold tracking-tight tabular', k.big ? 'text-2xl' : 'text-3xl', k.tone)}>
-              {k.value}
-            </p>
+            <p className={cn('mt-4 font-display font-extrabold tracking-tight tabular', k.big ? 'text-2xl' : 'text-3xl', k.tone)}>{k.value}</p>
             <p className="mt-0.5 text-sm font-medium text-foreground">{k.label}</p>
             <p className="text-xs text-muted-foreground">{k.sub}</p>
           </Link>
         ))}
       </div>
 
-      {/* Corpo — agenda + projetos | aprovações + alertas */}
+      {/* Corpo */}
       <div className="grid gap-6 lg:grid-cols-3">
         <div className="space-y-6 lg:col-span-2">
           {/* Agenda do dia */}
           <Panel title="Agenda do dia" kicker="Equipe" href="/agenda" hrefLabel="Abrir agenda">
-            <ul className="divide-y divide-border">
-              {GINGA_AGENDA.map((a) => {
-                const m = memberOf(a.memberId)
-                const c = clientOf(a.clientId)
-                return (
+            {s.agenda.length === 0 ? (
+              <Empty text="Nenhum compromisso hoje." action="/agenda" actionLabel="Agendar algo" />
+            ) : (
+              <ul className="divide-y divide-border">
+                {s.agenda.map((a) => (
                   <li key={a.id} className="flex items-center gap-4 px-5 py-3 transition-colors hover:bg-white/[0.02]">
                     <span className="w-12 font-mono text-sm font-semibold text-brand tabular">{a.time}</span>
-                    <span className="text-base">{KIND_EMOJI[a.kind]}</span>
+                    <span className="text-base">{KIND_EMOJI[a.kind] ?? '🗓️'}</span>
                     <div className="min-w-0 flex-1">
                       <p className="truncate text-sm font-medium text-foreground">{a.title}</p>
-                      <p className="text-xs text-muted-foreground">{c ? c.name : 'Interno'}</p>
+                      <p className="text-xs text-muted-foreground">{a.who}</p>
                     </div>
-                    {m && (
-                      <span title={m.name} className="grid size-7 shrink-0 place-items-center rounded-full text-[10px] font-bold text-black" style={{ backgroundColor: m.color }}>
-                        {m.initials}
+                    {a.memberName && (
+                      <span title={a.memberName} className="grid size-7 shrink-0 place-items-center rounded-full text-[10px] font-bold text-black" style={{ backgroundColor: a.memberColor ?? '#f2b23e' }}>
+                        {getInitials(a.memberName)}
                       </span>
                     )}
                   </li>
-                )
-              })}
-            </ul>
+                ))}
+              </ul>
+            )}
           </Panel>
 
           {/* Projetos em foco */}
           <Panel title="Projetos em foco" kicker="Produção" href="/projetos" hrefLabel="Ver todos">
-            <ul className="divide-y divide-border">
-              {projetosFoco.map((p) => {
-                const c = clientOf(p.clientId)
-                const meta = PROJECT_STATUS_META[p.status]
-                const late = isLate(p.deadline)
-                return (
-                  <li key={p.id} className="px-5 py-3.5">
-                    <div className="flex items-center gap-3">
-                      <div className="min-w-0 flex-1">
-                        <div className="flex items-center gap-2">
-                          <p className="truncate text-sm font-semibold text-foreground">{p.name}</p>
-                          <span className={cn('shrink-0 rounded-full px-2 py-0.5 text-[10px] font-medium', PRIORITY_META[p.priority].chip)}>
-                            {PRIORITY_META[p.priority].label}
-                          </span>
+            {s.projetosFoco.length === 0 ? (
+              <Empty text="Nenhum projeto ativo ainda." action="/projetos" actionLabel="Criar primeiro projeto" />
+            ) : (
+              <ul className="divide-y divide-border">
+                {s.projetosFoco.map((p) => {
+                  const meta = PROJECT_STATUS_META[p.status]
+                  return (
+                    <li key={p.id} className="px-5 py-3.5">
+                      <div className="flex items-center gap-3">
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center gap-2">
+                            <p className="truncate text-sm font-semibold text-foreground">{p.name}</p>
+                            <span className={cn('shrink-0 rounded-full px-2 py-0.5 text-[10px] font-medium', PRIORITY_META[p.priority].chip)}>
+                              {PRIORITY_META[p.priority].label}
+                            </span>
+                          </div>
+                          <p className="text-xs text-muted-foreground">{p.clientName}</p>
                         </div>
-                        <p className="text-xs text-muted-foreground">{c?.name}</p>
+                        <span className={cn('shrink-0 rounded-full px-2.5 py-1 text-[11px] font-medium', meta.chip)}>{meta.label}</span>
                       </div>
-                      <span className={cn('shrink-0 rounded-full px-2.5 py-1 text-[11px] font-medium', meta.chip)}>{meta.label}</span>
-                    </div>
-                    <div className="mt-2.5 flex items-center gap-3">
-                      <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-secondary">
-                        <div className="h-full rounded-full bg-brand-gradient" style={{ width: `${p.progress}%` }} />
+                      <div className="mt-2.5 flex items-center gap-3">
+                        <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-secondary">
+                          <div className="h-full rounded-full bg-brand-gradient" style={{ width: `${p.progress}%` }} />
+                        </div>
+                        <span className="w-9 text-right font-mono text-[11px] text-muted-foreground tabular">{p.progress}%</span>
+                        {p.deadline && (
+                          <span className={cn('inline-flex items-center gap-1 text-[11px]', p.late ? 'text-rose-300' : 'text-muted-foreground')}>
+                            <Clock className="size-3" />
+                            {new Date(`${p.deadline}T12:00:00`).toLocaleDateString('pt-BR', { day: '2-digit', month: 'short' })}
+                          </span>
+                        )}
                       </div>
-                      <span className="w-9 text-right font-mono text-[11px] text-muted-foreground tabular">{p.progress}%</span>
-                      <span className={cn('inline-flex items-center gap-1 text-[11px]', late ? 'text-rose-300' : 'text-muted-foreground')}>
-                        <Clock className="size-3" />
-                        {new Date(`${p.deadline}T12:00:00`).toLocaleDateString('pt-BR', { day: '2-digit', month: 'short' })}
-                      </span>
-                    </div>
-                  </li>
-                )
-              })}
-            </ul>
+                    </li>
+                  )
+                })}
+              </ul>
+            )}
           </Panel>
         </div>
 
         {/* Coluna direita */}
         <div className="space-y-6">
-          {/* Aprovações aguardando */}
           <Panel title="Aprovações" kicker="Aguardando" href="/aprovacoes" hrefLabel="Central">
-            <ul className="divide-y divide-border">
-              {aprovacoesPendentes.slice(0, 4).map((a) => {
-                const c = clientOf(a.clientId)
-                const meta = APPROVAL_STATUS_META[a.status]
-                return (
-                  <li key={a.id} className="flex items-center gap-3 px-5 py-3">
-                    <span className={cn('size-2 shrink-0 rounded-full', meta.dot)} />
-                    <div className="min-w-0 flex-1">
-                      <p className="truncate text-sm font-medium text-foreground">{a.title}</p>
-                      <p className="text-xs text-muted-foreground">{c?.name} · v{a.version}</p>
-                    </div>
-                    <ChevronRight className="size-4 shrink-0 text-muted-foreground/40" />
-                  </li>
-                )
-              })}
-            </ul>
+            {s.aprovacoesPendentes.length === 0 ? (
+              <Empty text="Nada aguardando aprovação." action="/aprovacoes" actionLabel="Enviar material" />
+            ) : (
+              <ul className="divide-y divide-border">
+                {s.aprovacoesPendentes.map((a) => {
+                  const meta = APPROVAL_STATUS_META[a.status]
+                  return (
+                    <li key={a.id} className="flex items-center gap-3 px-5 py-3">
+                      <span className={cn('size-2 shrink-0 rounded-full', meta.dot)} />
+                      <div className="min-w-0 flex-1">
+                        <p className="truncate text-sm font-medium text-foreground">{a.title}</p>
+                        <p className="text-xs text-muted-foreground">{a.clientName} · v{a.version}</p>
+                      </div>
+                      <ChevronRight className="size-4 shrink-0 text-muted-foreground/40" />
+                    </li>
+                  )
+                })}
+              </ul>
+            )}
           </Panel>
 
           {/* Alertas do Atlas */}
@@ -203,47 +295,40 @@ export default function DashboardPage() {
               <Link href="/atlas" className="kicker text-brand hover:underline">Ver tudo</Link>
             </div>
             <ul className="divide-y divide-border">
-              {GINGA_ALERTS.slice(0, 3).map((al) => {
-                const sev = ATLAS_SEVERITY_META[al.severity]
-                return (
-                  <li key={al.id}>
-                    <Link href={al.href ?? '/atlas'} className="block px-5 py-3 transition-colors hover:bg-white/[0.02]">
-                      <div className="flex items-center gap-2">
-                        <span className={cn('size-1.5 rounded-full', sev.dot)} />
-                        <p className="text-xs font-semibold text-foreground">{al.title}</p>
-                      </div>
-                      <p className="mt-1 line-clamp-2 text-[11px] leading-relaxed text-muted-foreground">{al.body}</p>
-                    </Link>
-                  </li>
-                )
-              })}
+              {s.alertas.map((al) => (
+                <li key={al.id}>
+                  <Link href={al.href} className="block px-5 py-3 transition-colors hover:bg-white/[0.02]">
+                    <div className="flex items-center gap-2">
+                      <span className={cn('size-1.5 rounded-full', al.dot)} />
+                      <p className="text-xs font-semibold text-foreground">{al.title}</p>
+                    </div>
+                    <p className="mt-1 line-clamp-2 text-[11px] leading-relaxed text-muted-foreground">{al.body}</p>
+                  </Link>
+                </li>
+              ))}
             </ul>
           </div>
         </div>
       </div>
 
       <p className="pt-2 text-center text-[11px] text-muted-foreground/50">
-        Ginga Studio OS · dados de demonstração · desenvolvido por GRP Tecnologia
+        Ginga Studio OS · desenvolvido por GRP Tecnologia
       </p>
 
       <AtlasCopilot
-        name="Estevam"
+        name={s.firstName}
         stats={{
-          reunioes: GINGA_AGENDA.length,
-          aprovacoes: aprovacoesPendentes.length,
-          atrasadas: tarefasAtrasadas.length,
-          semContato: semContato.length,
+          reunioes: s.agenda.length,
+          aprovacoes: s.aprovacoesPendentes.length,
+          atrasadas: s.tarefasAtrasadas,
+          semContato: 0,
         }}
       />
     </div>
   )
 }
 
-function AtlasBriefing({
-  reunioes, aprovacoes, atrasadas, semContato, urgente,
-}: {
-  reunioes: number; aprovacoes: number; atrasadas: number; semContato: number; urgente: string | null
-}) {
+function AtlasBriefing({ name, reunioes, aprovacoes, atrasadas }: { name: string; reunioes: number; aprovacoes: number; atrasadas: number }) {
   return (
     <div className="animate-rise relative overflow-hidden rounded-2xl border border-brand/30 bg-gradient-to-br from-brand/[0.08] via-card to-card p-5 shadow-card sm:p-6">
       <div aria-hidden className="ginga-glow pointer-events-none absolute inset-0 opacity-60" />
@@ -257,11 +342,9 @@ function AtlasBriefing({
             <span className="relative flex size-1.5"><span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-brand opacity-70" /><span className="relative inline-flex size-1.5 rounded-full bg-brand" /></span>
           </div>
           <p className="mt-2 text-[15px] leading-relaxed text-foreground/90">
-            Bom dia, Estevam. A agência tem <b className="text-foreground">{reunioes} compromissos</b> hoje,{' '}
-            <b className="text-sky-300">{aprovacoes} aprovações</b> aguardando ação e{' '}
-            <b className={atrasadas ? 'text-rose-300' : 'text-emerald-300'}>{atrasadas} tarefas atrasadas</b>.
-            {semContato > 0 && <> Há <b className="text-amber-300">{semContato} cliente</b> sem contato recente.</>}
-            {urgente && <> <span className="text-muted-foreground">{urgente}</span></>}
+            {greeting()}, {name}. A agência tem <b className="text-foreground">{reunioes} compromisso{reunioes === 1 ? '' : 's'}</b> hoje,{' '}
+            <b className="text-sky-300">{aprovacoes} aprovaç{aprovacoes === 1 ? 'ão' : 'ões'}</b> aguardando ação e{' '}
+            <b className={atrasadas ? 'text-rose-300' : 'text-emerald-300'}>{atrasadas} tarefa{atrasadas === 1 ? '' : 's'} atrasada{atrasadas === 1 ? '' : 's'}</b>.
           </p>
           <div className="mt-3.5 flex flex-wrap items-center gap-2">
             <Link href="/atlas" className="inline-flex items-center gap-1.5 rounded-xl bg-brand-gradient px-3.5 py-2 text-xs font-semibold text-brand-foreground shadow-gold transition-transform hover:scale-[1.02] active:scale-95">
@@ -277,11 +360,7 @@ function AtlasBriefing({
   )
 }
 
-function Panel({
-  title, kicker, href, hrefLabel, children,
-}: {
-  title: string; kicker: string; href: string; hrefLabel: string; children: React.ReactNode
-}) {
+function Panel({ title, kicker, href, hrefLabel, children }: { title: string; kicker: string; href: string; hrefLabel: string; children: React.ReactNode }) {
   return (
     <div className="overflow-hidden rounded-2xl border border-border bg-card shadow-card">
       <div className="flex items-center justify-between border-b border-border px-5 py-3.5">
@@ -292,6 +371,15 @@ function Panel({
         <Link href={href} className="text-xs font-medium text-brand hover:underline">{hrefLabel}</Link>
       </div>
       {children}
+    </div>
+  )
+}
+
+function Empty({ text, action, actionLabel }: { text: string; action: string; actionLabel: string }) {
+  return (
+    <div className="px-5 py-8 text-center">
+      <p className="text-sm text-muted-foreground">{text}</p>
+      <Link href={action} className="mt-2 inline-block text-xs font-semibold text-brand hover:underline">{actionLabel} →</Link>
     </div>
   )
 }

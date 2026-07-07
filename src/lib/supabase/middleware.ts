@@ -23,8 +23,15 @@ const RESTRICTED_TO: Record<string, Role[]> = {
   '/agendamento':   ['dono'],
   '/automacoes':    ['dono'],
   '/equipe':        ['dono'],
-  '/configuracoes': ['dono'],
+  // /configuracoes aberto a todos os papéis internos: é lá que o colaborador
+  // troca a própria senha (a seção de marca fica oculta pra quem não é dono).
   '/usuarios':      ['dono'],
+  '/financeiro':    ['dono'],
+  '/comercial':     ['dono'],
+  '/propostas':     ['dono'],
+  '/relatorios':    ['dono'],
+  '/growth':        ['dono'],
+  '/integracoes':   ['dono'],
 }
 
 export async function updateSession(request: NextRequest) {
@@ -71,8 +78,8 @@ export async function updateSession(request: NextRequest) {
     pathname === '/'
 
   // Não autenticado tentando rota privada → login
-  // DEMO MODE: permitir acesso sem auth quando NEXT_PUBLIC_DEMO_MODE=true
-  const isDemoMode = process.env.NEXT_PUBLIC_DEMO_MODE === 'true'
+  // DEMO MODE: permitir acesso sem auth SÓ fora de produção (nunca abre o app real)
+  const isDemoMode = process.env.NEXT_PUBLIC_DEMO_MODE === 'true' && process.env.NODE_ENV !== 'production'
   if (!user && !isAuthRoute && !isPublicRoute && !isDemoMode) {
     const url = request.nextUrl.clone()
     url.pathname = '/login'

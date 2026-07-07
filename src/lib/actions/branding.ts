@@ -14,11 +14,14 @@ export async function saveWorkspaceBranding(data: {
 
   const { data: profile, error: profileError } = await supabase
     .from('profiles')
-    .select('workspace_id')
+    .select('workspace_id, role')
     .single()
 
   if (profileError || !profile?.workspace_id) {
     return { error: 'Empresa não encontrada' }
+  }
+  if (!['dono', 'super_admin'].includes((profile.role as string) ?? '')) {
+    return { error: 'Apenas o dono pode alterar a marca da agência.' }
   }
 
   // Merge settings parcial com o existente
