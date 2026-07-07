@@ -1,13 +1,14 @@
 'use client'
 
-import { useMemo, useState } from 'react'
+import { useMemo, useState, useTransition } from 'react'
 import {
   ArrowDownCircle, ArrowUpCircle, Plus, Trash2, Check, Circle, CalendarClock,
-  Calculator as CalcIcon, Wallet, TrendingUp, TrendingDown, X,
+  Calculator as CalcIcon, Wallet, TrendingUp, TrendingDown, Loader2,
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
 import { GINGA_FINANCE, clientOf, mx, demoDate, demoToday } from '@/lib/demo/agency'
+import { createFinanceEntry, toggleFinancePaid, removeFinanceEntry } from '@/lib/actions/finance'
 import {
   Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription,
 } from '@/components/ui/sheet'
@@ -34,8 +35,9 @@ const SEED: Entry[] = [
 const fmtDia = (d: string) => new Date(`${d}T12:00:00`).toLocaleDateString('pt-BR', { day: '2-digit', month: 'short' })
 const isLate = (due: string, paid: boolean) => !paid && due < demoToday()
 
-export function FinanceiroView() {
-  const [entries, setEntries] = useState<Entry[]>(SEED)
+export function FinanceiroView({ initialEntries, isRealData }: { initialEntries?: Entry[] | null; isRealData?: boolean }) {
+  const [entries, setEntries] = useState<Entry[]>(initialEntries ?? SEED)
+  const [pending, start] = useTransition()
   const [open, setOpen] = useState(false)
   const [form, setForm] = useState<{ kind: Kind; description: string; amount: string; due: string; contato: string }>({
     kind: 'pagar', description: '', amount: '', due: demoToday(), contato: '',
@@ -56,18 +58,33 @@ export function FinanceiroView() {
   )
 
   function togglePaid(id: string) {
-    setEntries((es) => es.map((e) => e.id === id ? { ...e, paid: !e.paid } : e))
+    const cur = entries.find((e) => e.id === id)
+    const next = !cur?.paid
+    setEntries((es) => es.map((e) => e.id === id ? { ...e, paid: next } : e))
+    if (!isRealData) return
+    start(async () => { const res = await toggleFinancePaid(id, next); if (res.error) toast.error(res.error) })
   }
   function remove(id: string) {
     setEntries((es) => es.filter((e) => e.id !== id))
+    if (!isRealData) return
+    start(async () => { const res = await removeFinanceEntry(id); if (res.error) toast.error(res.error) })
   }
   function add() {
     const amount = Number(String(form.amount).replace(',', '.'))
     if (!form.description.trim() || !amount) { toast.error('Informe descrição e valor'); return }
-    setEntries((es) => [...es, { id: uid(), kind: form.kind, description: form.description.trim(), amount, due: form.due, paid: false, contato: form.contato.trim() || undefined }])
-    toast.success(form.kind === 'receber' ? 'Conta a receber adicionada 💚' : 'Conta a pagar adicionada')
-    setForm({ kind: form.kind, description: '', amount: '', due: demoToday(), contato: '' })
-    setOpen(false)
+    const base = { kind: form.kind, description: form.description.trim(), amount, due: form.due, contato: form.contato.trim() || undefined }
+    const done = (id: string) => {
+      setEntries((es) => [...es, { id, paid: false, ...base }])
+      toast.success(form.kind === 'receber' ? 'Conta a receber adicionada 💚' : 'Conta a pagar adicionada')
+      setForm({ kind: form.kind, description: '', amount: '', due: demoToday(), contato: '' })
+      setOpen(false)
+    }
+    if (!isRealData) { done(uid()); return }
+    start(async () => {
+      const res = await createFinanceEntry({ kind: form.kind, description: base.description, amount, due: form.due, contact: form.contato.trim() })
+      if (res.error) { toast.error(res.error); return }
+      done((res as unknown as { id?: string }).id ?? uid())
+    })
   }
 
   return (
@@ -167,8 +184,8 @@ export function FinanceiroView() {
               <span className="mb-1.5 block text-xs font-medium text-muted-foreground">Cliente / fornecedor (opcional)</span>
               <input value={form.contato} onChange={(e) => setForm({ ...form, contato: e.target.value })} placeholder="Nome" className={inp} />
             </label>
-            <button onClick={add} className="inline-flex h-11 w-full items-center justify-center gap-2 rounded-xl bg-brand-gradient text-sm font-semibold text-brand-foreground shadow-gold transition-transform hover:scale-[1.01] active:scale-95">
-              <Plus className="size-4" /> Adicionar
+            <button onClick={add} disabled={pending} className="inline-flex h-11 w-full items-center justify-center gap-2 rounded-xl bg-brand-gradient text-sm font-semibold text-brand-foreground shadow-gold transition-transform hover:scale-[1.01] active:scale-95 disabled:opacity-60">
+              {pending ? <Loader2 className="size-4 animate-spin" /> : <><Plus className="size-4" /> Adicionar</>}
             </button>
           </div>
         </SheetContent>

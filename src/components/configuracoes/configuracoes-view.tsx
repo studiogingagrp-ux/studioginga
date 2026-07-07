@@ -1,11 +1,12 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useTransition } from 'react'
 import { toast } from 'sonner'
 import { Palette, Globe, Clock, ImagePlus, Check, Building2, KeyRound, Eye, EyeOff, Loader2, ShieldCheck } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { LogoMark } from '@/components/brand/logo'
 import { createClient, isSupabaseConfigured } from '@/lib/supabase/client'
+import { saveWorkspaceBranding } from '@/lib/actions/branding'
 
 const SWATCHES = ['#f2b23e', '#f0722a', '#e0245e', '#8b5cf6', '#0ea5e9', '#22c55e', '#eab308', '#ef4444']
 const IDIOMAS = [{ id: 'pt', label: 'Português', flag: '🇧🇷' }, { id: 'es', label: 'Español', flag: '🇲🇽' }, { id: 'en', label: 'English', flag: '🇺🇸' }]
@@ -18,12 +19,22 @@ function darken(hex: string, amount = 0.16) {
   return `#${[r, g, b].map((v) => Math.round(v).toString(16).padStart(2, '0')).join('')}`
 }
 
-export function ConfiguracoesView() {
-  const [name, setName] = useState('Ginga Studio')
-  const [color, setColor] = useState('#f2b23e')
+export function ConfiguracoesView({ initialName, initialColor, isRealData }: { initialName?: string; initialColor?: string; isRealData?: boolean } = {}) {
+  const [name, setName] = useState(initialName || 'Ginga Studio')
+  const [color, setColor] = useState(initialColor || '#f2b23e')
   const [lang, setLang] = useState('pt')
   const [start, setStart] = useState('09:00')
   const [end, setEnd] = useState('18:00')
+  const [saving, startSave] = useTransition()
+
+  function salvar() {
+    if (!isRealData) { toast.success('Configurações salvas!'); return }
+    startSave(async () => {
+      const res = await saveWorkspaceBranding({ name: name.trim(), brand_color: color })
+      if (res.error) toast.error(res.error)
+      else toast.success('Configurações salvas! 💾')
+    })
+  }
 
   function applyColor(hex: string) {
     setColor(hex)
