@@ -6,10 +6,13 @@ import {
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
-import { GINGA_CLIENTS, mx, clientOf } from '@/lib/demo/agency'
+import { GINGA_CLIENTS, mx } from '@/lib/demo/agency'
+import { createProposal, setProposalStatus, removeProposal } from '@/lib/actions/proposals'
 import {
   Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription,
 } from '@/components/ui/sheet'
+
+export interface ClientOpt { id: string; name: string; contact: string; phone: string }
 
 interface Item { s: string; v: number }
 interface Template { id: string; name: string; emoji: string; desc: string; items: Item[]; intro: string }
@@ -56,16 +59,20 @@ const SEED: Proposta[] = [
   { id: 'p7', clientId: 'c7', templateName: 'Pacote Completo 360°',         value: 50000, status: 'rascunho', at: 'Hoje' },
 ]
 
+const DEMO_CLIENTS: ClientOpt[] = GINGA_CLIENTS.map((c) => ({ id: c.id, name: c.name, contact: c.contact, phone: c.phone }))
 const uid = () => Math.random().toString(36).slice(2, 9)
+const STATUS_CYCLE: (keyof typeof STATUS)[] = ['rascunho', 'enviada', 'aceita', 'recusada']
 
-export function PropostasView() {
+export function PropostasView({ initialProposals, clients, isRealData }: { initialProposals?: Proposta[] | null; clients?: ClientOpt[]; isRealData?: boolean }) {
+  const clientList = isRealData ? (clients ?? []) : DEMO_CLIENTS
+  const clientById = useMemo(() => new Map(clientList.map((c) => [c.id, c])), [clientList])
   const [tab, setTab] = useState<'propostas' | 'contratos' | 'templates'>('propostas')
-  const [propostas, setPropostas] = useState<Proposta[]>(SEED)
+  const [propostas, setPropostas] = useState<Proposta[]>(initialProposals ?? (isRealData ? [] : SEED))
   const [builder, setBuilder] = useState(false)
   const [doc, setDoc] = useState<{ text: string; phone: string } | null>(null)
 
   // builder form
-  const [clientId, setClientId] = useState('c1')
+  const [clientId, setClientId] = useState(clientList[0]?.id ?? 'c1')
   const [tplId, setTplId] = useState('completo')
   const [items, setItems] = useState<Item[]>(TEMPLATES.find((t) => t.id === 'completo')!.items)
   const [intro, setIntro] = useState(TEMPLATES.find((t) => t.id === 'completo')!.intro)
@@ -84,11 +91,11 @@ export function PropostasView() {
   }
 
   function gerar() {
-    const c = clientOf(clientId)
+    const c = clientById.get(clientId)
     const tpl = TEMPLATES.find((t) => t.id === tplId)!
     const linhas: string[] = []
     linhas.push('*PROPOSTA COMERCIAL — Ginga Studio*')
-    linhas.push(`Para: ${c?.name}  (${c?.contact})`)
+    linhas.push(`Para: ${c?.name ?? '—'}  (${c?.contact ?? ''})`)
     linhas.push(`Data: ${new Date().toLocaleDateString('pt-BR')} · válida por ${validity} dias`)
     linhas.push('')
     linhas.push(intro.trim())
@@ -102,8 +109,26 @@ export function PropostasView() {
     linhas.push('_Ginga Studio · marketing que gira resultado._')
     const text = linhas.join('\n')
     setDoc({ text, phone: c?.phone ?? '' })
-    setPropostas((prev) => [{ id: uid(), clientId, templateName: tpl.name, value: total, status: 'rascunho', at: 'Hoje' }, ...prev])
-    toast.success('✨ Proposta gerada pelo Atlas!')
+
+    const addLocal = (id: string) => setPropostas((prev) => [{ id, clientId, templateName: tpl.name, value: total, status: 'rascunho', at: 'Hoje' }, ...prev])
+    if (!isRealData) { addLocal(uid()); toast.success('✨ Proposta gerada pelo Atlas!'); return }
+    createProposal({ clientId, title: tpl.name, template: tpl.id, value: total, intro, validity, items, status: 'rascunho' }).then((r) => {
+      if (r.error) { toast.error(r.error); return }
+      addLocal((r as unknown as { id?: string }).id ?? uid())
+      toast.success('✨ Proposta gerada e salva!')
+    })
+  }
+
+  function cycleStatus(p: Proposta) {
+    const next = STATUS_CYCLE[(STATUS_CYCLE.indexOf(p.status) + 1) % STATUS_CYCLE.length]
+    setPropostas((prev) => prev.map((x) => x.id === p.id ? { ...x, status: next } : x))
+    toast.success(`${clientById.get(p.clientId)?.name ?? 'Proposta'} → ${STATUS[next].label}`)
+    if (isRealData) setProposalStatus(p.id, next as 'rascunho' | 'enviada' | 'aceita' | 'recusada').then((r) => { if (r.error) toast.error(r.error) })
+  }
+
+  function excluir(id: string) {
+    setPropostas((prev) => prev.filter((x) => x.id !== id))
+    if (isRealData) removeProposal(id).then((r) => { if (r.error) toast.error(r.error) })
   }
 
   const enviadas = propostas.filter((p) => p.status !== 'recusada')
@@ -142,24 +167,33 @@ export function PropostasView() {
             <Kpi label="Fechadas" value={mx(propostas.filter((p) => p.status === 'aceita').reduce((s, p) => s + p.value, 0))} tone="text-emerald-300" />
           </div>
           <div className="overflow-hidden rounded-2xl border border-border bg-card shadow-card">
+            {propostas.length === 0 ? (
+              <div className="px-5 py-14 text-center">
+                <span className="mx-auto grid size-12 place-items-center rounded-2xl bg-secondary text-brand"><FileText className="size-5" /></span>
+                <p className="mt-3 text-sm font-semibold text-foreground">Nenhuma proposta ainda</p>
+                <p className="mt-1 text-xs text-muted-foreground">Clique em “Nova proposta” e o Atlas monta em segundos.</p>
+              </div>
+            ) : (
             <ul className="divide-y divide-border">
               {propostas.map((p) => {
-                const c = clientOf(p.clientId); const st = STATUS[p.status]
+                const c = clientById.get(p.clientId); const st = STATUS[p.status]
                 return (
-                  <li key={p.id} className="flex items-center gap-3 px-5 py-3.5">
+                  <li key={p.id} className="group flex items-center gap-3 px-5 py-3.5">
                     <span className="grid size-9 shrink-0 place-items-center rounded-xl bg-secondary text-brand"><FileText className="size-4" /></span>
                     <div className="min-w-0 flex-1">
-                      <p className="truncate text-sm font-semibold text-foreground">{c?.name}</p>
+                      <p className="truncate text-sm font-semibold text-foreground">{c?.name ?? '—'}</p>
                       <p className="truncate text-xs text-muted-foreground">{p.templateName} · {p.at}</p>
                     </div>
                     <span className="font-display text-sm font-bold text-foreground tabular">{mx(p.value)}</span>
-                    <span className={cn('inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-medium', st.chip)}>
+                    <button onClick={() => cycleStatus(p)} title="Clique para avançar o status" className={cn('inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-medium transition-transform hover:scale-105 active:scale-95', st.chip)}>
                       <span className={cn('size-1.5 rounded-full', st.dot)} /> {st.label}
-                    </span>
+                    </button>
+                    <button onClick={() => excluir(p.id)} title="Excluir" className="text-muted-foreground/0 transition-colors group-hover:text-muted-foreground/40 hover:!text-rose-300"><Trash2 className="size-4" /></button>
                   </li>
                 )
               })}
             </ul>
+            )}
           </div>
         </>
       )}
@@ -214,7 +248,8 @@ export function PropostasView() {
             <div className="grid grid-cols-2 gap-3">
               <label className="block"><span className="mb-1.5 block text-xs font-medium text-muted-foreground">Cliente</span>
                 <select value={clientId} onChange={(e) => setClientId(e.target.value)} className={inp}>
-                  {GINGA_CLIENTS.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+                  {clientList.length === 0 && <option value="">Sem clientes</option>}
+                  {clientList.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
                 </select></label>
               <label className="block"><span className="mb-1.5 block text-xs font-medium text-muted-foreground">Validade (dias)</span>
                 <input type="number" value={validity} onChange={(e) => setValidity(Number(e.target.value))} className={inp} /></label>
