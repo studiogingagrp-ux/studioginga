@@ -1,6 +1,6 @@
 import {
   LayoutDashboard, CalendarDays, FolderKanban, KanbanSquare, BadgeCheck,
-  Target, Users, Wallet, Megaphone, Sparkles,
+  Target, Users, Wallet, Megaphone, Sparkles, MessageCircle,
   Settings, FileText, Sun, ShieldCheck,
   type LucideIcon,
 } from 'lucide-react'
@@ -63,7 +63,8 @@ export const NAV_SECTIONS: NavSection[] = [
 ]
 
 export const NAV_FOOTER: NavItem[] = [
-  { href: '/usuarios',      label: 'Equipe & Acessos', icon: ShieldCheck, roles: ['dono'] },
+  { href: '/usuarios',      label: 'Equipe & Acessos', icon: ShieldCheck,   roles: ['dono'] },
+  { href: '/whatsapp',      label: 'WhatsApp',         icon: MessageCircle, roles: ['dono'] },
   { href: '/configuracoes', label: 'Configurações',    icon: Settings },
 ]
 

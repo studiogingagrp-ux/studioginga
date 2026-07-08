@@ -25,13 +25,14 @@ const RESTRICTED_TO: Record<string, Role[]> = {
   '/financeiro':    ['dono'],
   '/comercial':     ['dono'],
   '/propostas':     ['dono'],
+  '/whatsapp':      ['dono'],
 }
 
 // Telas demonstrativas herdadas — SEM backend real. Fora da nav e, aqui,
 // fora do ar: qualquer acesso direto volta pra home do papel.
 // Voltam ao produto quando forem construídas de verdade.
 const LEGACY_DEMO_ROUTES = [
-  '/tempo', '/check-in', '/growth', '/whatsapp', '/relatorios', '/automacoes',
+  '/tempo', '/check-in', '/growth', '/relatorios', '/automacoes',
   '/reunioes', '/equipe', '/integracoes', '/pipeline', '/campanhas',
   '/centro-conhecimento', '/agendamento',
 ]

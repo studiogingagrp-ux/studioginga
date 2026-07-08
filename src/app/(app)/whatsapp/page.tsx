@@ -1,8 +1,9 @@
 import type { Metadata } from 'next'
-import { WhatsappCentral } from '@/components/whatsapp/whatsapp-central'
+import { WhatsappConnect } from '@/components/whatsapp/whatsapp-connect'
 
 export const metadata: Metadata = { title: 'WhatsApp' }
+export const dynamic = 'force-dynamic'
 
 export default function WhatsappPage() {
-  return <WhatsappCentral />
+  return <WhatsappConnect />
 }
