@@ -30,14 +30,19 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     if (user) {
       const { data: profile } = await supabase
         .from('profiles')
-        .select('role, full_name, workspace_id, permissions')
+        .select('role, full_name, workspace_id')
         .eq('id', user.id)
         .single()
+
+      // permissions só existe após a migration 010 — busca à parte, tolerante
+      try {
+        const { data: permRow } = await supabase.from('profiles').select('permissions').eq('id', user.id).single()
+        permissions = (permRow?.permissions as Permissions) ?? null
+      } catch { permissions = null }
 
       if (profile) {
         role = (profile.role as Role) ?? role
         name = profile.full_name || name
-        permissions = (profile.permissions as Permissions) ?? null
 
         // Logado mas sem agência → completar onboarding do dono.
         if (!profile.workspace_id) redirect('/onboarding')

@@ -286,24 +286,36 @@ export interface TeamMember {
 
 export async function getTeamMembers(): Promise<TeamMember[]> {
   const supabase = await createClient()
-  const { data } = await supabase
+  // permissions/protected só existem após a migration 010 — tolera ausência
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let res: any = await supabase
     .from('profiles')
     .select('id, full_name, email, role, active, permissions, protected')
     .in('role', ['dono', 'membro', 'convidado'])
-    .order('role')
-    .order('full_name')
-
+    .order('role').order('full_name')
+  if (res.error) {
+    res = await supabase
+      .from('profiles')
+      .select('id, full_name, email, role, active')
+      .in('role', ['dono', 'membro', 'convidado'])
+      .order('role').order('full_name')
+  }
+  const data = res.data as Array<Record<string, unknown>> | null
   if (!data) return []
 
-  return (data as Array<Record<string, unknown>>).map((p) => ({
-    id:     p.id as string,
-    name:   (p.full_name as string) || '—',
-    email:  (p.email as string | null) ?? '—',
-    role:   p.role as 'dono' | 'membro' | 'convidado',
-    active: (p.active as boolean | null) ?? true,
-    permissions: (p.permissions as Record<string, boolean> | null) ?? null,
-    protected: (p.protected as boolean | null) ?? false,
-  }))
+  return data.map((p) => {
+    const email = (p.email as string | null) ?? '—'
+    return {
+      id:     p.id as string,
+      name:   (p.full_name as string) || '—',
+      email,
+      role:   p.role as 'dono' | 'membro' | 'convidado',
+      active: (p.active as boolean | null) ?? true,
+      permissions: (p.permissions as Record<string, boolean> | null) ?? null,
+      // fallback: protege o Estevam mesmo sem a coluna 'protected'
+      protected: (p.protected as boolean | null) ?? (email.toLowerCase() === 'estevara2019@gmail.com'),
+    }
+  })
 }
 
 // ── RELATÓRIOS ────────────────────────────────────────────────────────
@@ -514,32 +526,38 @@ function mapEventRow(a: any): DemoEvent {
   }
 }
 
+// meet_link só existe após a migration 010 — tolera ausência caindo p/ o base.
 const EVENT_SELECT = `
   id, starts_at, ends_at, status, type, visibility, title, notes, meet_link, member_id, client_id,
   clients(id, full_name, phone, company)
 `
+const EVENT_SELECT_BASE = `
+  id, starts_at, ends_at, status, type, visibility, title, notes, member_id, client_id,
+  clients(id, full_name, phone, company)
+`
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+async function selectEvents(build: (sel: string) => any): Promise<DemoEvent[]> {
+  let res = await build(EVENT_SELECT)
+  if (res.error) res = await build(EVENT_SELECT_BASE) // coluna meet_link ainda não existe
+  const data = res.data as Array<Record<string, unknown>> | null
+  if (!data) return []
+  return data.map(mapEventRow)
+}
 
 export async function getEventsByDate(date: string): Promise<DemoEvent[]> {
   const supabase = await createClient()
-  const { data } = await supabase
-    .from('events')
-    .select(EVENT_SELECT)
-    .gte('starts_at', `${date}T00:00:00`)
-    .lte('starts_at', `${date}T23:59:59`)
-    .order('starts_at')
-  if (!data) return []
-  return (data as Array<Record<string, unknown>>).map(mapEventRow)
+  return selectEvents((sel) => supabase
+    .from('events').select(sel)
+    .gte('starts_at', `${date}T00:00:00`).lte('starts_at', `${date}T23:59:59`)
+    .order('starts_at'))
 }
 
 /** Eventos num intervalo [from, to] (YYYY-MM-DD) — para as visões Semana/Mês. */
 export async function getEventsByRange(from: string, to: string): Promise<DemoEvent[]> {
   const supabase = await createClient()
-  const { data } = await supabase
-    .from('events')
-    .select(EVENT_SELECT)
-    .gte('starts_at', `${from}T00:00:00`)
-    .lte('starts_at', `${to}T23:59:59`)
-    .order('starts_at')
-  if (!data) return []
-  return (data as Array<Record<string, unknown>>).map(mapEventRow)
+  return selectEvents((sel) => supabase
+    .from('events').select(sel)
+    .gte('starts_at', `${from}T00:00:00`).lte('starts_at', `${to}T23:59:59`)
+    .order('starts_at'))
 }
