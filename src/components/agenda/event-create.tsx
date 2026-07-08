@@ -18,7 +18,9 @@ const TYPES: { id: EventType; label: string }[] =
   TYPE_ORDER.map((id) => ({ id, label: `${TYPE_META[id].emoji} ${TYPE_META[id].label}` }))
 const inputCls = 'h-11 w-full rounded-xl border border-input bg-card px-3.5 text-sm outline-none focus:ring-2 focus:ring-brand/30'
 
-export interface CreatePrefill { memberId?: string; start?: string }
+export interface CreatePrefill { memberId?: string; start?: string; date?: string }
+
+const todayLocal = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}` }
 
 export function EventCreate({
   open, onOpenChange, prefill, onCreate, members, clients,
@@ -38,6 +40,7 @@ export function EventCreate({
   const [phone, setPhone] = useState('')
   const [company, setCompany] = useState('')
   const [memberIds, setMemberIds] = useState<string[]>([proList[0]?.id ?? ''])
+  const [dateStr, setDateStr] = useState(todayLocal())
   const [start, setStart] = useState('09:00')
   const [duration, setDuration] = useState(30)
   const [type, setType] = useState<EventType>('reuniao')
@@ -49,6 +52,7 @@ export function EventCreate({
     if (open) {
       setMemberIds([prefill?.memberId ?? proList[0]?.id ?? ''].filter(Boolean))
       setStart(prefill?.start ?? '09:00')
+      setDateStr(prefill?.date ?? todayLocal())
       setClientName(''); setClientId(undefined); setPhone(''); setCompany(''); setDuration(30); setType('reuniao'); setVisibility('equipe'); setMeetLink('')
     }
   }, [open, prefill]) // eslint-disable-line react-hooks/exhaustive-deps
@@ -77,6 +81,7 @@ export function EventCreate({
       title: isBlock ? (title.trim() || 'Bloqueio') : title.trim(),
       phone: phone.replace(/\D/g, ''),
       company: company.trim() || undefined,
+      date: dateStr,
       start,
       durationMin: duration,
       status: 'agendado' as const,
@@ -85,7 +90,8 @@ export function EventCreate({
       meetLink: meetLink.trim() || undefined,
     }
     ids.forEach((mid) => onCreate({ id: crypto.randomUUID(), memberId: mid, ...base }))
-    toast.success(ids.length > 1 ? `Agendado às ${start} para ${ids.length} pessoas` : `Evento criado às ${start}`)
+    const diaFmt = new Date(`${dateStr}T12:00:00`).toLocaleDateString('pt-BR', { day: '2-digit', month: 'short' })
+    toast.success(ids.length > 1 ? `Agendado ${diaFmt} às ${start} para ${ids.length} pessoas` : `Agendado ${diaFmt} às ${start}`)
     onOpenChange(false)
   }
 
@@ -169,6 +175,13 @@ export function EventCreate({
               })}
             </div>
             <p className="mt-1.5 text-[11px] text-muted-foreground/70">Toque para incluir mais de uma pessoa — o compromisso entra na agenda de cada uma.</p>
+          </Field>
+
+          <Field label="Dia">
+            <div className="flex items-center gap-2">
+              <CalendarPlus className="size-4 shrink-0 text-muted-foreground" />
+              <input type="date" value={dateStr} onChange={(e) => setDateStr(e.target.value)} className={inputCls} />
+            </div>
           </Field>
 
           <div className="grid grid-cols-2 gap-3">

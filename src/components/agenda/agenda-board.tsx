@@ -15,7 +15,7 @@ import { timeFromSlotIndex } from '@/lib/agenda/time'
 import type { EventStatus } from '@/types/database'
 import { STATUS_META, STATUS_ORDER } from '@/lib/constants/events'
 import { DayView, EventCard } from './day-view'
-import { WeekView } from './week-view'
+import { MultiDayView } from './multi-day-view'
 import { MonthView } from './month-view'
 import { EventDetails } from './event-details'
 import { EventCreate, type CreatePrefill } from './event-create'
@@ -26,9 +26,9 @@ import {
 } from '@/lib/actions/events'
 import { createClient, isSupabaseConfigured } from '@/lib/supabase/client'
 
-type View = 'dia' | 'semana' | 'mes'
+type View = 'dia' | 'semana' | 'quinzena' | 'mes'
 const VIEWS: { id: View; label: string }[] = [
-  { id: 'dia', label: 'Dia' }, { id: 'semana', label: 'Semana' }, { id: 'mes', label: 'Mês' },
+  { id: 'dia', label: 'Dia' }, { id: 'semana', label: 'Semana' }, { id: 'quinzena', label: 'Quinzena' }, { id: 'mes', label: 'Mês' },
 ]
 
 interface Props {
@@ -111,6 +111,9 @@ export function AgendaBoard({
     if (view === 'semana') {
       from = new Date(date); from.setDate(date.getDate() - date.getDay())
       to = new Date(from); to.setDate(from.getDate() + 6)
+    } else if (view === 'quinzena') {
+      from = new Date(date)
+      to = new Date(date); to.setDate(date.getDate() + 14)
     } else {
       from = new Date(date.getFullYear(), date.getMonth(), 1)
       to = new Date(date.getFullYear(), date.getMonth() + 1, 0)
@@ -125,8 +128,12 @@ export function AgendaBoard({
   const visiblePros = pros.filter((p) => !hidden.has(p.id))
   // Regra de privacidade aplicada uma única vez, antes de qualquer view.
   const shownAppts  = appts.map((a) => maskEvent(a, currentMemberId))
-  // Visão Semana: em modo real usa o intervalo buscado; em demo, o dia atual.
-  const weekAppts   = (isRealData ? rangeAppts : appts).map((a) => maskEvent(a, currentMemberId))
+  // Visões Semana/Quinzena/Mês: em modo real usam o intervalo buscado; em demo, o dia atual.
+  const rangeShown  = (isRealData ? rangeAppts : appts).map((a) => maskEvent(a, currentMemberId))
+  // Dias da semana (domingo→sábado) que contêm `date`
+  const semanaDias  = Array.from({ length: 7 }, (_, i) => { const x = new Date(date); x.setDate(date.getDate() - date.getDay() + i); return x })
+  // 15 dias a partir de `date` (quinzena)
+  const quinzenaDias = Array.from({ length: 15 }, (_, i) => { const x = new Date(date); x.setDate(date.getDate() + i); return x })
   const activeAppt  = shownAppts.find((a) => a.id === activeId)
   const proOf       = (id: string) => pros.find((p) => p.id === id)
 
@@ -137,9 +144,10 @@ export function AgendaBoard({
 
   function shift(dir: 1 | -1) {
     const d = new Date(date)
-    if (view === 'dia')    d.setDate(d.getDate() + dir)
-    else if (view === 'semana') d.setDate(d.getDate() + dir * 7)
-    else                   d.setMonth(d.getMonth() + dir)
+    if (view === 'dia')         d.setDate(d.getDate() + dir)
+    else if (view === 'semana')   d.setDate(d.getDate() + dir * 7)
+    else if (view === 'quinzena') d.setDate(d.getDate() + dir * 15)
+    else                        d.setMonth(d.getMonth() + dir)
     setDate(d)
   }
 
@@ -180,8 +188,11 @@ export function AgendaBoard({
     }
   }
 
+  const ymdLocal = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+
   function openCreate(pre?: CreatePrefill) {
-    setPrefill(pre)
+    // abre já no dia que a agenda está mostrando (editável no formulário)
+    setPrefill({ ...pre, date: pre?.date ?? ymdLocal(date) })
     setCreateOpen(true)
   }
 
@@ -194,16 +205,18 @@ export function AgendaBoard({
   }
 
   function handleCreate(a: DemoEvent) {
-    setAppts((prev) => [...prev, a])
+    const eventDay = a.date ?? ymdLocal(date)
+    // só entra na coluna do dia se for o dia que está sendo exibido (Dia view)
+    if (eventDay === ymdLocal(date)) setAppts((prev) => [...prev, a])
+    else toast.success('Agendado em outro dia — abra aquele dia para ver.')
     if (isRealData) {
-      const dateStr = date.toISOString().split('T')[0]
       startTransition(() =>
         createEvent({
           memberId: a.memberId,
           clientId:      a.clientId,
           title:    a.title,
           phone:          a.phone,
-          date:           dateStr,
+          date:           eventDay,
           start:          a.start,
           durationMin:    a.durationMin,
           type:           a.type,
@@ -323,8 +336,9 @@ export function AgendaBoard({
             <DayView events={shownAppts} members={visiblePros} currentMemberId={currentMemberId} onSelect={selectGuarded} onCreateAt={createAt} onResize={resizeAppt} />
           </div>
         )}
-        {view === 'semana' && <WeekView date={date} events={weekAppts} members={visiblePros} onSelect={selectGuarded} />}
-        {view === 'mes'    && <MonthView date={date} onPickDay={(d) => { setDate(d); setView('dia') }} />}
+        {view === 'semana'   && <MultiDayView days={semanaDias} events={rangeShown} members={visiblePros} onSelect={selectGuarded} onPickDay={(d) => { setDate(d); setView('dia') }} />}
+        {view === 'quinzena' && <MultiDayView days={quinzenaDias} events={rangeShown} members={visiblePros} onSelect={selectGuarded} onPickDay={(d) => { setDate(d); setView('dia') }} />}
+        {view === 'mes'      && <MonthView date={date} events={rangeShown} onPickDay={(d) => { setDate(d); setView('dia') }} />}
         <DragOverlay dropAnimation={null}>
           {activeAppt ? (
             <div className="w-[190px] cursor-grabbing">
