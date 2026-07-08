@@ -34,7 +34,13 @@ export const metadata: Metadata = {
   applicationName: "Ginga Studio OS",
   appleWebApp: { capable: true, statusBarStyle: "black-translucent", title: "Ginga Studio" },
   manifest: "/manifest.webmanifest",
-  icons: { icon: "/icon.svg", apple: "/icon.svg" },
+  icons: {
+    icon: [
+      { url: "/icon.png", type: "image/png", sizes: "192x192" },
+      { url: "/ginga-logo.png", type: "image/png", sizes: "512x512" },
+    ],
+    apple: "/apple-icon.png",
+  },
 };
 
 export const viewport: Viewport = {

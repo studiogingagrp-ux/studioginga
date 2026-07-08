@@ -63,7 +63,7 @@ const DEMO_CLIENTS: ClientOpt[] = GINGA_CLIENTS.map((c) => ({ id: c.id, name: c.
 const uid = () => Math.random().toString(36).slice(2, 9)
 const STATUS_CYCLE: (keyof typeof STATUS)[] = ['rascunho', 'enviada', 'aceita', 'recusada']
 
-export function PropostasView({ initialProposals, clients, isRealData }: { initialProposals?: Proposta[] | null; clients?: ClientOpt[]; isRealData?: boolean }) {
+export function PropostasView({ initialProposals, clients, isRealData, agencyName = 'Ginga Studio' }: { initialProposals?: Proposta[] | null; clients?: ClientOpt[]; isRealData?: boolean; agencyName?: string }) {
   const clientList = isRealData ? (clients ?? []) : DEMO_CLIENTS
   const clientById = useMemo(() => new Map(clientList.map((c) => [c.id, c])), [clientList])
   const [tab, setTab] = useState<'propostas' | 'contratos' | 'templates'>('propostas')
@@ -94,7 +94,7 @@ export function PropostasView({ initialProposals, clients, isRealData }: { initi
     const c = clientById.get(clientId)
     const tpl = TEMPLATES.find((t) => t.id === tplId)!
     const linhas: string[] = []
-    linhas.push('*PROPOSTA COMERCIAL — Ginga Studio*')
+    linhas.push(`*PROPOSTA COMERCIAL — ${agencyName}*`)
     linhas.push(`Para: ${c?.name ?? '—'}  (${c?.contact ?? ''})`)
     linhas.push(`Data: ${new Date().toLocaleDateString('pt-BR')} · válida por ${validity} dias`)
     linhas.push('')
@@ -106,7 +106,7 @@ export function PropostasView({ initialProposals, clients, isRealData }: { initi
     linhas.push(`*Investimento total: ${mx(total)}/mês*`)
     linhas.push('')
     linhas.push('Para aprovar, responda *ACEITO* — e já começamos. 🚀')
-    linhas.push('_Ginga Studio · marketing que gira resultado._')
+    linhas.push(`_${agencyName} · marketing que gira resultado._`)
     const text = linhas.join('\n')
     setDoc({ text, phone: c?.phone ?? '' })
 

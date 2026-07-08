@@ -20,16 +20,19 @@ export default async function PropostasPage() {
   let initialProposals: { id: string; clientId: string; templateName: string; value: number; status: 'rascunho' | 'enviada' | 'aceita' | 'recusada'; at: string }[] | null = null
   let clients: ClientOpt[] = []
   let isRealData = false
+  let agencyName = 'Ginga Studio'
 
   if (isSupabaseConfigured()) {
     try {
       const supabase = await createClient()
       const { data: { user } } = await supabase.auth.getUser()
       if (user) {
-        const [{ data: props }, { data: cls }] = await Promise.all([
+        const [{ data: props }, { data: cls }, { data: ws }] = await Promise.all([
           supabase.from('proposals').select('id, client_id, title, value, status, created_at').order('created_at', { ascending: false }),
           supabase.from('clients').select('id, full_name, phone, extra').order('full_name'),
+          supabase.from('workspaces').select('name').limit(1).single(),
         ])
+        if (ws?.name) agencyName = ws.name as string
         clients = (cls ?? []).map((c) => {
           const extra = (c.extra as Record<string, unknown> | null) ?? {}
           return {
@@ -54,5 +57,5 @@ export default async function PropostasPage() {
     }
   }
 
-  return <PropostasView initialProposals={initialProposals} clients={clients} isRealData={isRealData} />
+  return <PropostasView initialProposals={initialProposals} clients={clients} isRealData={isRealData} agencyName={agencyName} />
 }
