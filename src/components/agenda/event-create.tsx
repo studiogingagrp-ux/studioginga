@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { CalendarPlus, User, Video } from 'lucide-react'
+import { CalendarPlus, User, Video, Check } from 'lucide-react'
 import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
 import { DEMO_MEMBERS, type DemoEvent, type DemoMember } from '@/lib/demo/data'
@@ -37,7 +37,7 @@ export function EventCreate({
   const [clientId, setClientId]     = useState<string | undefined>(undefined)
   const [phone, setPhone] = useState('')
   const [company, setCompany] = useState('')
-  const [memberId, setMemberId] = useState(proList[0]?.id ?? '')
+  const [memberIds, setMemberIds] = useState<string[]>([proList[0]?.id ?? ''])
   const [start, setStart] = useState('09:00')
   const [duration, setDuration] = useState(30)
   const [type, setType] = useState<EventType>('reuniao')
@@ -47,11 +47,15 @@ export function EventCreate({
   // Ao abrir, aplica o pré-preenchimento (membro/horário do slot clicado).
   useEffect(() => {
     if (open) {
-      setMemberId(prefill?.memberId ?? proList[0]?.id ?? '')
+      setMemberIds([prefill?.memberId ?? proList[0]?.id ?? ''].filter(Boolean))
       setStart(prefill?.start ?? '09:00')
       setClientName(''); setClientId(undefined); setPhone(''); setCompany(''); setDuration(30); setType('reuniao'); setVisibility('equipe'); setMeetLink('')
     }
   }, [open, prefill]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  function toggleMember(id: string) {
+    setMemberIds((ids) => ids.includes(id) ? ids.filter((x) => x !== id) : [...ids, id])
+  }
 
   // Autocompletar telefone/convênio ao escolher um cliente existente.
   function pickClient(name: string) {
@@ -64,22 +68,24 @@ export function EventCreate({
   function save() {
     const isBlock = type === 'bloqueio'
     if (!isBlock && !title.trim()) { toast.error('Informe o título ou cliente'); return }
-    const novo: DemoEvent = {
-      id: crypto.randomUUID(),
-      memberId,
+    const ids = memberIds.length ? memberIds : [proList[0]?.id].filter(Boolean) as string[]
+    if (!ids.length) { toast.error('Selecione ao menos uma pessoa'); return }
+
+    // Um evento por pessoa selecionada — aparece na agenda de cada uma.
+    const base = {
       clientId: isBlock ? undefined : clientId,
       title: isBlock ? (title.trim() || 'Bloqueio') : title.trim(),
       phone: phone.replace(/\D/g, ''),
       company: company.trim() || undefined,
       start,
       durationMin: duration,
-      status: 'agendado',
+      status: 'agendado' as const,
       type,
-      visibility: type === 'pessoal' ? 'privado' : visibility,
+      visibility: type === 'pessoal' ? 'privado' as const : visibility,
       meetLink: meetLink.trim() || undefined,
     }
-    onCreate(novo)
-    toast.success(`Evento criado às ${start}`)
+    ids.forEach((mid) => onCreate({ id: crypto.randomUUID(), memberId: mid, ...base }))
+    toast.success(ids.length > 1 ? `Agendado às ${start} para ${ids.length} pessoas` : `Evento criado às ${start}`)
     onOpenChange(false)
   }
 
@@ -145,10 +151,24 @@ export function EventCreate({
             <Field label="Motivo do bloqueio"><input value={title} onChange={(e) => setClientName(e.target.value)} placeholder="Ex: Almoço, Reunião" className={inputCls} /></Field>
           )}
 
-          <Field label="Membro">
-            <select value={memberId} onChange={(e) => setMemberId(e.target.value)} className={inputCls}>
-              {proList.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
-            </select>
+          <Field label={memberIds.length > 1 ? `Participantes (${memberIds.length})` : 'Participantes'}>
+            <div className="flex flex-wrap gap-1.5">
+              {proList.map((p) => {
+                const on = memberIds.includes(p.id)
+                return (
+                  <button key={p.id} type="button" onClick={() => toggleMember(p.id)}
+                    className={cn('inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-medium transition-colors',
+                      on ? 'border-brand bg-accent/60 text-accent-foreground' : 'border-border text-muted-foreground hover:bg-secondary')}>
+                    <span className="grid size-4 place-items-center rounded-full text-[9px] font-bold text-black" style={{ backgroundColor: p.color ?? '#b08d4e' }}>
+                      {p.name.split(' ').map((w) => w[0]).slice(0, 2).join('')}
+                    </span>
+                    {p.name}
+                    {on && <Check className="size-3" />}
+                  </button>
+                )
+              })}
+            </div>
+            <p className="mt-1.5 text-[11px] text-muted-foreground/70">Toque para incluir mais de uma pessoa — o compromisso entra na agenda de cada uma.</p>
           </Field>
 
           <div className="grid grid-cols-2 gap-3">

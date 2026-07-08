@@ -296,8 +296,15 @@ export function ReunioesView() {
                 <input type="date" value={nf.date} onChange={(e) => setNf({ ...nf, date: e.target.value })} className={ri} />
               </label>
               <label className="block">
-                <span className="mb-1.5 block text-xs font-medium text-muted-foreground">Horário</span>
-                <input type="time" value={nf.time} onChange={(e) => setNf({ ...nf, time: e.target.value })} className={ri} />
+                <span className="mb-1.5 block text-xs font-medium text-muted-foreground">Horário (24h)</span>
+                <select value={nf.time} onChange={(e) => setNf({ ...nf, time: e.target.value })} className={ri}>
+                  {Array.from({ length: 28 }, (_, i) => {
+                    const h = 7 + Math.floor(i / 2)
+                    const m = i % 2 === 0 ? '00' : '30'
+                    const t = `${String(h).padStart(2, '0')}:${m}`
+                    return <option key={t} value={t}>{t}</option>
+                  })}
+                </select>
               </label>
             </div>
 
