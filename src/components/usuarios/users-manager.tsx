@@ -42,9 +42,10 @@ const ROLE_HINT: Record<string, string> = {
 interface Props {
   initialMembers?: TeamMember[] | null
   isRealData?: boolean
+  currentUserId?: string
 }
 
-export function UsersManager({ initialMembers, isRealData }: Props) {
+export function UsersManager({ initialMembers, isRealData, currentUserId }: Props) {
   const router = useRouter()
   const [members, setMembers] = useState<Member[]>(initialMembers ?? INITIAL_DEMO)
   const [open, setOpen]       = useState(false)
@@ -126,7 +127,11 @@ export function UsersManager({ initialMembers, isRealData }: Props) {
 
       <div className="overflow-hidden rounded-2xl border border-border bg-card shadow-card">
         {members.map((m, i) => {
-          const canManage = m.role !== 'dono' && m.role !== 'super_admin'
+          // Permissões (funções) só fazem sentido p/ colaborador — dono tem tudo.
+          const canSetPerms = m.role !== 'dono' && m.role !== 'super_admin'
+          // Excluir vale p/ qualquer conta (inclusive Dono/sócio), menos o Estevam
+          // (protegido) e a própria conta de quem está logado.
+          const canDelete = !m.protected && m.id !== currentUserId
           return (
             <div
               key={m.id}
@@ -147,7 +152,7 @@ export function UsersManager({ initialMembers, isRealData }: Props) {
                 {ROLES[m.role]?.label ?? m.role}
               </span>
 
-              {canManage && (
+              {canSetPerms && (
                 <button
                   onClick={() => setPermFor(m)}
                   title="Permissões / funções liberadas"
@@ -156,7 +161,7 @@ export function UsersManager({ initialMembers, isRealData }: Props) {
                   <SlidersHorizontal className="size-4" />
                 </button>
               )}
-              {canManage && (
+              {canSetPerms && (
                 <button
                   onClick={() => onToggle(m.id, m.active)}
                   disabled={togglingId === m.id}
@@ -169,7 +174,7 @@ export function UsersManager({ initialMembers, isRealData }: Props) {
                 <span className="grid size-8 shrink-0 place-items-center rounded-lg text-muted-foreground/40" title="Conta protegida — não pode ser excluída">
                   <Lock className="size-4" />
                 </span>
-              ) : canManage ? (
+              ) : canDelete ? (
                 <button
                   onClick={() => onRemove(m)}
                   disabled={removingId === m.id}
