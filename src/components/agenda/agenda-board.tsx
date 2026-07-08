@@ -50,6 +50,7 @@ export function AgendaBoard({
   // Em modo demo, o seletor "Ver como" permite simular a visão de cada membro.
   const [currentMemberId, setCurrentMemberId] = useState(initialCurrentMemberId)
   const [appts, setAppts] = useState<DemoEvent[]>(initialEvents)
+  const [rangeAppts, setRangeAppts] = useState<DemoEvent[]>([])
   const [pros]            = useState<DemoMember[]>(initialMembers)
   const [view, setView]   = useState<View>('dia')
   const [date, setDate]   = useState(new Date())
@@ -102,10 +103,30 @@ export function AgendaBoard({
       .finally(() => setLoadingDate(false))
   }, [date, view, isRealData]) // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Semana/Mês: busca o intervalo real de eventos ao redor da data selecionada.
+  useEffect(() => {
+    if (!isRealData || view === 'dia') return
+    const ymd = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+    let from: Date, to: Date
+    if (view === 'semana') {
+      from = new Date(date); from.setDate(date.getDate() - date.getDay())
+      to = new Date(from); to.setDate(from.getDate() + 6)
+    } else {
+      from = new Date(date.getFullYear(), date.getMonth(), 1)
+      to = new Date(date.getFullYear(), date.getMonth() + 1, 0)
+    }
+    fetch(`/api/events?from=${ymd(from)}&to=${ymd(to)}`)
+      .then((r) => r.json())
+      .then((d) => { if (d.events) setRangeAppts(d.events as DemoEvent[]) })
+      .catch(() => null)
+  }, [date, view, isRealData]) // eslint-disable-line react-hooks/exhaustive-deps
+
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 6 } }))
   const visiblePros = pros.filter((p) => !hidden.has(p.id))
   // Regra de privacidade aplicada uma única vez, antes de qualquer view.
   const shownAppts  = appts.map((a) => maskEvent(a, currentMemberId))
+  // Visão Semana: em modo real usa o intervalo buscado; em demo, o dia atual.
+  const weekAppts   = (isRealData ? rangeAppts : appts).map((a) => maskEvent(a, currentMemberId))
   const activeAppt  = shownAppts.find((a) => a.id === activeId)
   const proOf       = (id: string) => pros.find((p) => p.id === id)
 
@@ -187,6 +208,7 @@ export function AgendaBoard({
           durationMin:    a.durationMin,
           type:           a.type,
           notes:          a.notes,
+          meetLink:       a.meetLink,
         }).then((r) => {
           if ('error' in r) toast.error(r.error)
         })
@@ -299,7 +321,7 @@ export function AgendaBoard({
             <DayView events={shownAppts} members={visiblePros} currentMemberId={currentMemberId} onSelect={selectGuarded} onCreateAt={createAt} onResize={resizeAppt} />
           </div>
         )}
-        {view === 'semana' && <WeekView date={date} events={shownAppts} members={visiblePros} onSelect={selectGuarded} />}
+        {view === 'semana' && <WeekView date={date} events={weekAppts} members={visiblePros} onSelect={selectGuarded} />}
         {view === 'mes'    && <MonthView date={date} onPickDay={(d) => { setDate(d); setView('dia') }} />}
         <DragOverlay dropAnimation={null}>
           {activeAppt ? (

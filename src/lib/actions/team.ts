@@ -110,3 +110,46 @@ export async function toggleEmployee(id: string, active: boolean): Promise<{ ok?
   revalidatePath('/usuarios')
   return { ok: true }
 }
+
+const PROTECTED_EMAILS = ['estevara2019@gmail.com']
+
+/** Exclui um acesso da agência (some a conta). O dono principal é protegido. */
+export async function removeEmployee(id: string): Promise<{ ok?: true; error?: string }> {
+  const me = await currentProfile()
+  if (!me || me.role !== 'dono') return { error: 'Apenas o dono pode excluir acessos.' }
+  if (id === me.userId) return { error: 'Você não pode excluir a própria conta.' }
+
+  const admin = createAdminClient()
+  const { data: target } = await admin
+    .from('profiles')
+    .select('email, protected, workspace_id')
+    .eq('id', id)
+    .eq('workspace_id', me.workspace_id)
+    .single()
+  if (!target) return { error: 'Acesso não encontrado.' }
+  if (target.protected || PROTECTED_EMAILS.includes(((target.email as string) ?? '').toLowerCase())) {
+    return { error: 'Esta conta é protegida e não pode ser excluída.' }
+  }
+
+  await admin.from('profiles').delete().eq('id', id)
+  const { error } = await admin.auth.admin.deleteUser(id)
+  if (error) return { error: error.message }
+  revalidatePath('/usuarios')
+  return { ok: true }
+}
+
+/** Define as funções liberadas de um colaborador (permissões estilo BelezaPro). */
+export async function setEmployeePermissions(id: string, permissions: Record<string, boolean>): Promise<{ ok?: true; error?: string }> {
+  const me = await currentProfile()
+  if (!me || me.role !== 'dono') return { error: 'Sem permissão.' }
+  const admin = createAdminClient()
+  const { error } = await admin
+    .from('profiles')
+    .update({ permissions })
+    .eq('id', id)
+    .eq('workspace_id', me.workspace_id)
+  if (error) return { error: error.message }
+  revalidatePath('/usuarios')
+  revalidatePath('/', 'layout')
+  return { ok: true }
+}

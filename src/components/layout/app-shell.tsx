@@ -7,6 +7,7 @@ import { Menu, LogOut, ChevronsUpDown, Search, Sparkles, Crown, UserRound, Check
 import { cn, getInitials } from '@/lib/utils'
 import { createClient, isSupabaseConfigured } from '@/lib/supabase/client'
 import { navSectionsForRole, navFooterForRole, type NavItem } from '@/lib/constants/nav'
+import type { Permissions } from '@/lib/constants/features'
 import { ROLES, ROLE_COOKIE, DEMO_ROLE_COOKIE, type Role } from '@/lib/constants/roles'
 import { brandVars, type WorkspaceBranding } from '@/lib/branding'
 import { Logo } from '@/components/brand/logo'
@@ -27,10 +28,11 @@ interface Props {
   workspaceName: string
   workspaceBranding?: WorkspaceBranding | null
   clients?: CmdClient[]
+  permissions?: Permissions
   children: React.ReactNode
 }
 
-export function AppShell({ role, name, workspaceName, workspaceBranding, clients, children }: Props) {
+export function AppShell({ role, name, workspaceName, workspaceBranding, clients, permissions, children }: Props) {
   const [mobileOpen, setMobileOpen] = useState(false)
   const vars = brandVars(workspaceBranding)
   const logoUrl = workspaceBranding?.logo_url ?? undefined
@@ -42,7 +44,7 @@ export function AppShell({ role, name, workspaceName, workspaceBranding, clients
 
       {/* Sidebar desktop */}
       <aside className="sticky top-0 z-20 hidden h-screen w-[266px] shrink-0 flex-col border-r border-sidebar-border bg-sidebar lg:flex">
-        <SidebarBody role={role} workspaceName={workspaceName} logoUrl={logoUrl} />
+        <SidebarBody role={role} permissions={permissions} workspaceName={workspaceName} logoUrl={logoUrl} />
       </aside>
 
       {/* Sidebar mobile */}
@@ -50,7 +52,7 @@ export function AppShell({ role, name, workspaceName, workspaceBranding, clients
         <div className="fixed inset-0 z-50 lg:hidden">
           <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={() => setMobileOpen(false)} />
           <aside className="animate-rise absolute left-0 top-0 flex h-full w-[280px] flex-col border-r border-sidebar-border bg-sidebar">
-            <SidebarBody role={role} workspaceName={workspaceName} logoUrl={logoUrl} onNavigate={() => setMobileOpen(false)} />
+            <SidebarBody role={role} permissions={permissions} workspaceName={workspaceName} logoUrl={logoUrl} onNavigate={() => setMobileOpen(false)} />
           </aside>
         </div>
       )}
@@ -111,15 +113,16 @@ export function AppShell({ role, name, workspaceName, workspaceBranding, clients
 }
 
 function SidebarBody({
-  role, workspaceName, logoUrl, onNavigate,
+  role, permissions, workspaceName, logoUrl, onNavigate,
 }: {
   role: Role
+  permissions?: Permissions
   workspaceName: string
   logoUrl?: string
   onNavigate?: () => void
 }) {
-  const sections = navSectionsForRole(role)
-  const footer = navFooterForRole(role)
+  const sections = navSectionsForRole(role, permissions)
+  const footer = navFooterForRole(role, permissions)
   return (
     <>
       <div className="flex h-16 items-center px-5">

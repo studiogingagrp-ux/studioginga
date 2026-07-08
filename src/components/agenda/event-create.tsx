@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { CalendarPlus, User } from 'lucide-react'
+import { CalendarPlus, User, Video } from 'lucide-react'
 import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
 import { DEMO_MEMBERS, type DemoEvent, type DemoMember } from '@/lib/demo/data'
@@ -42,13 +42,14 @@ export function EventCreate({
   const [duration, setDuration] = useState(30)
   const [type, setType] = useState<EventType>('reuniao')
   const [visibility, setVisibility] = useState<EventVisibility>('equipe')
+  const [meetLink, setMeetLink] = useState('')
 
   // Ao abrir, aplica o pré-preenchimento (membro/horário do slot clicado).
   useEffect(() => {
     if (open) {
       setMemberId(prefill?.memberId ?? proList[0]?.id ?? '')
       setStart(prefill?.start ?? '09:00')
-      setClientName(''); setClientId(undefined); setPhone(''); setCompany(''); setDuration(30); setType('reuniao'); setVisibility('equipe')
+      setClientName(''); setClientId(undefined); setPhone(''); setCompany(''); setDuration(30); setType('reuniao'); setVisibility('equipe'); setMeetLink('')
     }
   }, [open, prefill]) // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -75,6 +76,7 @@ export function EventCreate({
       status: 'agendado',
       type,
       visibility: type === 'pessoal' ? 'privado' : visibility,
+      meetLink: meetLink.trim() || undefined,
     }
     onCreate(novo)
     toast.success(`Evento criado às ${start}`)
@@ -150,7 +152,7 @@ export function EventCreate({
           </Field>
 
           <div className="grid grid-cols-2 gap-3">
-            <Field label="Horário">
+            <Field label="Horário (24h)">
               <select value={start} onChange={(e) => setStart(e.target.value)} className={inputCls}>
                 {TIME_OPTIONS.map((t) => <option key={t} value={t}>{t}</option>)}
               </select>
@@ -161,6 +163,27 @@ export function EventCreate({
               </select>
             </Field>
           </div>
+
+          {/* Google Meet — para reuniões e calls */}
+          {(type === 'reuniao' || type === 'call') && (
+            <Field label="Videochamada (Google Meet)">
+              <div className="flex items-center gap-2">
+                <div className="relative flex-1">
+                  <Video className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+                  <input value={meetLink} onChange={(e) => setMeetLink(e.target.value)}
+                    placeholder="Cole o link do Meet aqui" className={cn(inputCls, 'pl-9')} />
+                </div>
+                <a
+                  href="https://meet.google.com/new" target="_blank" rel="noopener noreferrer"
+                  className="inline-flex h-11 shrink-0 items-center gap-1.5 rounded-xl border border-brand/30 bg-brand/10 px-3 text-xs font-semibold text-brand transition-colors hover:bg-brand/20"
+                  title="Abre o Google Meet numa nova aba — copie o link e cole aqui"
+                >
+                  <Video className="size-4" /> Criar
+                </a>
+              </div>
+              <p className="mt-1.5 text-[11px] text-muted-foreground/70">Clique em “Criar”, copie o link da sala e cole no campo. Ele aparece no evento para todos entrarem.</p>
+            </Field>
+          )}
         </div>
 
         <SheetFooter>

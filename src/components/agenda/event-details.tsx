@@ -62,6 +62,20 @@ export function EventDetails({
             </SheetHeader>
 
             <div className="space-y-4 px-4">
+              {appt.meetLink && (
+                <a
+                  href={appt.meetLink} target="_blank" rel="noopener noreferrer"
+                  className="flex items-center gap-3 rounded-2xl border border-emerald-500/30 bg-emerald-500/10 p-4 transition-all hover:-translate-y-0.5 hover:shadow-card"
+                >
+                  <span className="grid size-10 shrink-0 place-items-center rounded-xl bg-emerald-500 text-black">
+                    <Video className="size-5" />
+                  </span>
+                  <span className="min-w-0">
+                    <span className="block text-sm font-semibold text-foreground">Entrar no Google Meet</span>
+                    <span className="block truncate text-xs text-muted-foreground">{appt.meetLink.replace(/^https?:\/\//, '')}</span>
+                  </span>
+                </a>
+              )}
               {(appt.type === 'reuniao' || appt.type === 'call') && (
                 <Link
                   href={`/reuniao/${appt.id}`}

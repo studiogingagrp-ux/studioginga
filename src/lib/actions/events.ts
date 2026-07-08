@@ -97,6 +97,7 @@ export async function createEvent(data: {
   durationMin: number
   type: string
   notes?: string
+  meetLink?: string
 }) {
   const supabase = await createClient()
 
@@ -148,6 +149,7 @@ export async function createEvent(data: {
       type:            data.type,
       title:           !clientId ? (data.title ?? null) : null,
       notes:           data.notes?.trim() || null,
+      meet_link:       data.meetLink?.trim() || null,
     })
     .select('id')
     .single()

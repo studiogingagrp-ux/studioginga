@@ -29,12 +29,17 @@ export function WeekView({
   const days = weekDays(date)
   const today = new Date()
   const proColor = (id: string) => members.find((p) => p.id === id)?.color ?? '#b08d4e'
+  const ymd = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+  const hasRealDates = events.some((e) => e.date)
 
-  // Distribui os agendamentos demo pelos dias úteis (visual).
-  const byDay = (i: number) =>
-    events
-      .filter((_, idx) => idx % 6 === i)
-      .sort((a, b) => a.start.localeCompare(b.start))
+  // Com dados reais: cada evento vai no seu dia real. Sem data (demo): distribui visual.
+  const byDay = (i: number) => {
+    if (hasRealDates) {
+      const key = ymd(days[i])
+      return events.filter((e) => e.date === key).sort((a, b) => a.start.localeCompare(b.start))
+    }
+    return events.filter((_, idx) => idx % 6 === i).sort((a, b) => a.start.localeCompare(b.start))
+  }
 
   return (
     <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">

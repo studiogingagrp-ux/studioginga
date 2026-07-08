@@ -5,6 +5,7 @@ import {
   type LucideIcon,
 } from 'lucide-react'
 import type { Role } from '@/lib/constants/roles'
+import { canAccessFeature, featureKeyForPath, type Permissions } from '@/lib/constants/features'
 
 export interface NavItem {
   href: string
@@ -68,19 +69,25 @@ export const NAV_FOOTER: NavItem[] = [
   { href: '/configuracoes', label: 'Configurações',    icon: Settings },
 ]
 
-/** Um item é visível se não declara papéis ou se inclui o papel atual. */
-function visibleTo(item: NavItem, role: Role): boolean {
-  return !item.roles || item.roles.includes(role)
+/**
+ * Um item é visível se: (1) o papel permite E (2) a função está liberada
+ * nas permissões do colaborador (dono/super_admin ignoram permissões).
+ */
+function visibleTo(item: NavItem, role: Role, permissions?: Permissions): boolean {
+  if (item.roles && !item.roles.includes(role)) return false
+  const key = featureKeyForPath(item.href)
+  if (key && !canAccessFeature(role, permissions, key)) return false
+  return true
 }
 
-/** Seções de navegação filtradas pelo papel (remove seções que ficam vazias). */
-export function navSectionsForRole(role: Role): NavSection[] {
+/** Seções de navegação filtradas pelo papel + permissões (remove seções vazias). */
+export function navSectionsForRole(role: Role, permissions?: Permissions): NavSection[] {
   return NAV_SECTIONS
-    .map((s) => ({ ...s, items: s.items.filter((i) => visibleTo(i, role)) }))
+    .map((s) => ({ ...s, items: s.items.filter((i) => visibleTo(i, role, permissions)) }))
     .filter((s) => s.items.length > 0)
 }
 
-/** Itens do rodapé filtrados pelo papel. */
-export function navFooterForRole(role: Role): NavItem[] {
-  return NAV_FOOTER.filter((i) => visibleTo(i, role))
+/** Itens do rodapé filtrados pelo papel + permissões. */
+export function navFooterForRole(role: Role, permissions?: Permissions): NavItem[] {
+  return NAV_FOOTER.filter((i) => visibleTo(i, role, permissions))
 }

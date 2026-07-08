@@ -6,6 +6,7 @@ import { isSupabaseConfigured } from '@/lib/supabase/client'
 import type { Role } from '@/lib/constants/roles'
 import type { WorkspaceBranding } from '@/lib/branding'
 import type { CmdClient } from '@/components/layout/command-palette'
+import type { Permissions } from '@/lib/constants/features'
 import { getDemoSession } from '@/lib/demo/session'
 
 export const dynamic = 'force-dynamic'
@@ -19,6 +20,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   let workspaceName      = 'Ginga Studio'
   let workspaceBranding: WorkspaceBranding | null = null
   let clients: CmdClient[] = []
+  let permissions: Permissions = null
   let billing: Billing | null = null
 
   if (isSupabaseConfigured()) {
@@ -28,13 +30,14 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     if (user) {
       const { data: profile } = await supabase
         .from('profiles')
-        .select('role, full_name, workspace_id')
+        .select('role, full_name, workspace_id, permissions')
         .eq('id', user.id)
         .single()
 
       if (profile) {
         role = (profile.role as Role) ?? role
         name = profile.full_name || name
+        permissions = (profile.permissions as Permissions) ?? null
 
         // Logado mas sem agência → completar onboarding do dono.
         if (!profile.workspace_id) redirect('/onboarding')
@@ -107,7 +110,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   const showBanner = billing && !billing.blocked && billing.daysLeft !== null && billing.daysLeft <= 5
 
   return (
-    <AppShell role={role} name={name} workspaceName={workspaceName} workspaceBranding={workspaceBranding} clients={clients}>
+    <AppShell role={role} name={name} workspaceName={workspaceName} workspaceBranding={workspaceBranding} clients={clients} permissions={permissions}>
       {showBanner && billing?.dueDate && (
         <BillingBanner daysLeft={billing.daysLeft as number} dueDate={billing.dueDate} paymentLink={billing.paymentLink} />
       )}

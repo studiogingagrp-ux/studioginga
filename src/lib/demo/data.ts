@@ -27,6 +27,9 @@ export interface DemoEvent {
   type: EventType
   visibility: EventVisibility
   notes?: string
+  meetLink?: string
+  /** Data local 'YYYY-MM-DD' — usada nas visões Semana/Mês (dados reais). */
+  date?: string
   /** true quando o conteúdo foi ocultado para quem não é o dono do evento. */
   masked?: boolean
 }

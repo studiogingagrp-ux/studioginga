@@ -278,16 +278,18 @@ export interface TeamMember {
   id: string
   name: string
   email: string
-  role: 'dono' | 'membro' | 'membro'
+  role: 'dono' | 'membro' | 'convidado'
   active: boolean
+  permissions?: Record<string, boolean> | null
+  protected?: boolean
 }
 
 export async function getTeamMembers(): Promise<TeamMember[]> {
   const supabase = await createClient()
   const { data } = await supabase
     .from('profiles')
-    .select('id, full_name, email, role, active')
-    .in('role', ['dono', 'membro', 'membro'])
+    .select('id, full_name, email, role, active, permissions, protected')
+    .in('role', ['dono', 'membro', 'convidado'])
     .order('role')
     .order('full_name')
 
@@ -297,8 +299,10 @@ export async function getTeamMembers(): Promise<TeamMember[]> {
     id:     p.id as string,
     name:   (p.full_name as string) || '—',
     email:  (p.email as string | null) ?? '—',
-    role:   p.role as 'dono' | 'membro' | 'membro',
+    role:   p.role as 'dono' | 'membro' | 'convidado',
     active: (p.active as boolean | null) ?? true,
+    permissions: (p.permissions as Record<string, boolean> | null) ?? null,
+    protected: (p.protected as boolean | null) ?? false,
   }))
 }
 
@@ -483,36 +487,59 @@ export async function getMedicoTodayEvents(): Promise<{
 }
 
 // ── AGENDAMENTOS ──────────────────────────────────────────────────────
+const localYMD = (iso: string) => {
+  const d = new Date(iso)
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function mapEventRow(a: any): DemoEvent {
+  const pArr    = a.clients as Array<{ id: string; full_name: string; phone: string; company?: string }> | { id: string; full_name: string; phone: string; company?: string } | null
+  const client = Array.isArray(pArr) ? pArr[0] : pArr
+  return {
+    id:          a.id as string,
+    memberId:    a.member_id as string,
+    clientId:    client?.id ?? (a.client_id as string | null) ?? undefined,
+    title:       client?.full_name ?? (a.title as string | null) ?? 'Bloqueio',
+    phone:       client?.phone ?? '',
+    company:     client?.company,
+    start:       toHHMM(a.starts_at as string),
+    durationMin: durationMin(a.starts_at as string, a.ends_at as string),
+    status:      a.status as DemoEvent['status'],
+    type:        a.type as DemoEvent['type'],
+    visibility:  (a.visibility as DemoEvent['visibility'] | null) ?? 'equipe',
+    notes:       a.notes as string | undefined,
+    meetLink:    (a.meet_link as string | null) ?? undefined,
+    date:        localYMD(a.starts_at as string),
+  }
+}
+
+const EVENT_SELECT = `
+  id, starts_at, ends_at, status, type, visibility, title, notes, meet_link, member_id, client_id,
+  clients(id, full_name, phone, company)
+`
+
 export async function getEventsByDate(date: string): Promise<DemoEvent[]> {
   const supabase = await createClient()
   const { data } = await supabase
     .from('events')
-    .select(`
-      id, starts_at, ends_at, status, type, visibility, title, notes, member_id, client_id,
-      clients(id, full_name, phone, company)
-    `)
+    .select(EVENT_SELECT)
     .gte('starts_at', `${date}T00:00:00`)
     .lte('starts_at', `${date}T23:59:59`)
     .order('starts_at')
-
   if (!data) return []
+  return (data as Array<Record<string, unknown>>).map(mapEventRow)
+}
 
-  return (data as Array<Record<string, unknown>>).map((a) => {
-    const pArr    = a.clients as Array<{ id: string; full_name: string; phone: string; company?: string }> | { id: string; full_name: string; phone: string; company?: string } | null
-    const client = Array.isArray(pArr) ? pArr[0] : pArr
-    return {
-      id:              a.id as string,
-      memberId:  a.member_id as string,
-      clientId:       client?.id ?? (a.client_id as string | null) ?? undefined,
-      title:     client?.full_name ?? (a.title as string | null) ?? 'Bloqueio',
-      phone:           client?.phone ?? '',
-      company:        client?.company,
-      start:           toHHMM(a.starts_at as string),
-      durationMin:     durationMin(a.starts_at as string, a.ends_at as string),
-      status:          a.status as DemoEvent['status'],
-      type:            a.type as DemoEvent['type'],
-      visibility:      (a.visibility as DemoEvent['visibility'] | null) ?? 'equipe',
-      notes:           a.notes as string | undefined,
-    }
-  })
+/** Eventos num intervalo [from, to] (YYYY-MM-DD) — para as visões Semana/Mês. */
+export async function getEventsByRange(from: string, to: string): Promise<DemoEvent[]> {
+  const supabase = await createClient()
+  const { data } = await supabase
+    .from('events')
+    .select(EVENT_SELECT)
+    .gte('starts_at', `${from}T00:00:00`)
+    .lte('starts_at', `${to}T23:59:59`)
+    .order('starts_at')
+  if (!data) return []
+  return (data as Array<Record<string, unknown>>).map(mapEventRow)
 }

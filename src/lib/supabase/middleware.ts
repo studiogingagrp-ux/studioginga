@@ -1,6 +1,7 @@
 import { createServerClient } from '@supabase/ssr'
 import { NextResponse, type NextRequest } from 'next/server'
 import { ROLE_COOKIE, homeForRole, type Role } from '@/lib/constants/roles'
+import { canAccessFeature, featureKeyForPath } from '@/lib/constants/features'
 
 // Sanitiza contra caracteres não-ASCII que quebram os headers do fetch.
 const clean = (s: string) => s.replace(/[^\x20-\x7E]/g, '').trim()
@@ -112,6 +113,21 @@ export async function updateSession(request: NextRequest) {
     if (restricted) {
       const [, allowed] = restricted
       if (!allowed.includes(role)) {
+        const url = request.nextUrl.clone()
+        url.pathname = homeForRole(role)
+        return NextResponse.redirect(url)
+      }
+    }
+  }
+
+  // Permissões por função (colaboradores): bloqueia acesso direto por URL a
+  // uma função que o dono não liberou. Dono/super_admin ignoram.
+  if (user && (role === 'membro' || role === 'convidado')) {
+    const key = featureKeyForPath(pathname)
+    if (key) {
+      const { data: prof } = await supabase.from('profiles').select('permissions').eq('id', user.id).single()
+      const perms = (prof?.permissions as Record<string, boolean> | null) ?? null
+      if (!canAccessFeature(role, perms, key)) {
         const url = request.nextUrl.clone()
         url.pathname = homeForRole(role)
         return NextResponse.redirect(url)
