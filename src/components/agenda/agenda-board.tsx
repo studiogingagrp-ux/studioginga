@@ -236,7 +236,9 @@ export function AgendaBoard({
               <ChevronRight className="size-4" />
             </button>
           </div>
-          <p className="text-sm font-medium capitalize text-foreground">{longDate}</p>
+          {/* suppressHydrationWarning: perto da meia-noite o servidor (UTC) e o
+              cliente (fuso local) podem discordar do dia — o valor do cliente vence */}
+          <p suppressHydrationWarning className="text-sm font-medium capitalize text-foreground">{longDate}</p>
         </div>
 
         <div className="flex items-center gap-2">
