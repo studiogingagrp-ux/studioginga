@@ -141,28 +141,30 @@ export async function createEvent(data: {
     }
   }
 
-  const { data: appt, error } = await supabase
-    .from('events')
-    .insert({
-      workspace_id:       workspaceId,
-      member_id: data.memberId,
-      client_id:      clientId ?? null,
-      starts_at:       startsAt.toISOString(),
-      ends_at:         endsAt.toISOString(),
-      status:          'agendado',
-      type:            data.type,
-      title:           !clientId ? (data.title ?? null) : null,
-      notes:           data.notes?.trim() || null,
-      meet_link:       data.meetLink?.trim() || null,
-    })
-    .select('id')
-    .single()
+  const payload: Record<string, unknown> = {
+    workspace_id:  workspaceId,
+    member_id:     data.memberId,
+    client_id:     clientId ?? null,
+    starts_at:     startsAt.toISOString(),
+    ends_at:       endsAt.toISOString(),
+    status:        'agendado',
+    type:          data.type,
+    title:         !clientId ? (data.title ?? null) : null,
+    notes:         data.notes?.trim() || null,
+    meet_link:     data.meetLink?.trim() || null,
+  }
 
+  let { data: appt, error } = await supabase.from('events').insert(payload).select('id').single()
+  // meet_link só existe após a migration 010 — se faltar, salva sem ele
+  if (error && /meet_link/.test(error.message)) {
+    delete payload.meet_link
+    ;({ data: appt, error } = await supabase.from('events').insert(payload).select('id').single())
+  }
   if (error) return { error: error.message }
 
   revalidatePath('/agenda')
   revalidatePath('/dashboard')
-  return { id: appt.id }
+  return { id: appt?.id }
 }
 
 export async function saveEventNote(id: string, notes: string) {
