@@ -48,11 +48,11 @@ export async function getDashboardData() {
     reunioes:   list.filter((a) => a.type === 'reuniao' || a.type === 'call').length,
   }
 
-  // Empresa e usuário
-  const { data: profile } = await supabase
-    .from('profiles')
-    .select('workspace_id, full_name')
-    .single()
+  // Empresa e usuário (filtra pelo id — .single() quebra com +1 pessoa)
+  const { data: { user } } = await supabase.auth.getUser()
+  const { data: profile } = user
+    ? await supabase.from('profiles').select('workspace_id, full_name').eq('id', user.id).single()
+    : { data: null }
   let workspaceName = ''
   let userName = ''
   if (profile) {

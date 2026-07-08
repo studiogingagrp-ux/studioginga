@@ -101,10 +101,14 @@ export async function createEvent(data: {
 }) {
   const supabase = await createClient()
 
-  // Busca workspace_id do profile logado
+  // Busca workspace_id do profile logado (filtra pelo id do usuário — senão
+  // .single() quebra quando a agência tem mais de uma pessoa)
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return { error: 'Sessão expirada. Entre novamente.' }
   const { data: profile } = await supabase
     .from('profiles')
     .select('workspace_id')
+    .eq('id', user.id)
     .single()
   const workspaceId = profile?.workspace_id as string | undefined
   if (!workspaceId) return { error: 'Empresa não encontrada' }

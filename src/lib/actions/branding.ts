@@ -12,9 +12,12 @@ export async function saveWorkspaceBranding(data: {
 }): Promise<{ error?: string }> {
   const supabase = await createClient()
 
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return { error: 'Sessão expirada. Entre novamente.' }
   const { data: profile, error: profileError } = await supabase
     .from('profiles')
     .select('workspace_id, role')
+    .eq('id', user.id)
     .single()
 
   if (profileError || !profile?.workspace_id) {
