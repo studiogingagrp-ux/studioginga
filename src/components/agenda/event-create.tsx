@@ -20,7 +20,33 @@ const inputCls = 'h-11 w-full rounded-xl border border-input bg-card px-3.5 text
 
 export interface CreatePrefill { memberId?: string; start?: string; date?: string }
 
+type Repeat = 'nao' | 'semanal' | 'quinzenal' | 'mensal' | 'anual'
+const REPEAT_OPTS: { id: Repeat; label: string }[] = [
+  { id: 'nao', label: 'Não repete' },
+  { id: 'semanal', label: 'Semanal' },
+  { id: 'quinzenal', label: 'Quinzenal' },
+  { id: 'mensal', label: 'Mensal' },
+  { id: 'anual', label: 'Anual' },
+]
+
 const todayLocal = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}` }
+const ymdOf = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+
+/** Gera as datas (YYYY-MM-DD) das ocorrências a partir de `baseYmd`. */
+function occurrenceDates(baseYmd: string, repeat: Repeat, count: number): string[] {
+  const base = new Date(`${baseYmd}T12:00:00`)
+  const n = repeat === 'nao' ? 1 : Math.max(1, Math.min(count, 52))
+  const out: string[] = []
+  for (let i = 0; i < n; i++) {
+    const d = new Date(base)
+    if (repeat === 'semanal')       d.setDate(base.getDate() + i * 7)
+    else if (repeat === 'quinzenal') d.setDate(base.getDate() + i * 14)
+    else if (repeat === 'mensal')    d.setMonth(base.getMonth() + i)
+    else if (repeat === 'anual')     d.setFullYear(base.getFullYear() + i)
+    out.push(ymdOf(d))
+  }
+  return out
+}
 
 export function EventCreate({
   open, onOpenChange, prefill, onCreate, members, clients,
@@ -46,6 +72,8 @@ export function EventCreate({
   const [type, setType] = useState<EventType>('reuniao')
   const [visibility, setVisibility] = useState<EventVisibility>('equipe')
   const [meetLink, setMeetLink] = useState('')
+  const [repeat, setRepeat] = useState<Repeat>('nao')
+  const [repeatCount, setRepeatCount] = useState(8)
 
   // Ao abrir, aplica o pré-preenchimento (membro/horário do slot clicado).
   useEffect(() => {
@@ -53,7 +81,7 @@ export function EventCreate({
       setMemberIds([prefill?.memberId ?? proList[0]?.id ?? ''].filter(Boolean))
       setStart(prefill?.start ?? '09:00')
       setDateStr(prefill?.date ?? todayLocal())
-      setClientName(''); setClientId(undefined); setPhone(''); setCompany(''); setDuration(30); setType('reuniao'); setVisibility('equipe'); setMeetLink('')
+      setClientName(''); setClientId(undefined); setPhone(''); setCompany(''); setDuration(30); setType('reuniao'); setVisibility('equipe'); setMeetLink(''); setRepeat('nao'); setRepeatCount(8)
     }
   }, [open, prefill]) // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -75,13 +103,12 @@ export function EventCreate({
     const ids = memberIds.length ? memberIds : [proList[0]?.id].filter(Boolean) as string[]
     if (!ids.length) { toast.error('Selecione ao menos uma pessoa'); return }
 
-    // Um evento por pessoa selecionada — aparece na agenda de cada uma.
+    // Um evento por pessoa selecionada × cada ocorrência da repetição.
     const base = {
       clientId: isBlock ? undefined : clientId,
       title: isBlock ? (title.trim() || 'Bloqueio') : title.trim(),
       phone: phone.replace(/\D/g, ''),
       company: company.trim() || undefined,
-      date: dateStr,
       start,
       durationMin: duration,
       status: 'agendado' as const,
@@ -89,9 +116,13 @@ export function EventCreate({
       visibility: type === 'pessoal' ? 'privado' as const : visibility,
       meetLink: meetLink.trim() || undefined,
     }
-    ids.forEach((mid) => onCreate({ id: crypto.randomUUID(), memberId: mid, ...base }))
+    const dias = occurrenceDates(dateStr, repeat, repeatCount)
+    dias.forEach((dia) => ids.forEach((mid) => onCreate({ id: crypto.randomUUID(), memberId: mid, date: dia, ...base })))
+
     const diaFmt = new Date(`${dateStr}T12:00:00`).toLocaleDateString('pt-BR', { day: '2-digit', month: 'short' })
-    toast.success(ids.length > 1 ? `Agendado ${diaFmt} às ${start} para ${ids.length} pessoas` : `Agendado ${diaFmt} às ${start}`)
+    const repLabel = (REPEAT_OPTS.find((r) => r.id === repeat)?.label ?? '').toLowerCase()
+    if (repeat !== 'nao') toast.success(`Agendado a partir de ${diaFmt} · ${repLabel} · ${dias.length}× ${ids.length > 1 ? `(${ids.length} pessoas)` : ''}`)
+    else toast.success(ids.length > 1 ? `Agendado ${diaFmt} às ${start} para ${ids.length} pessoas` : `Agendado ${diaFmt} às ${start}`)
     onOpenChange(false)
   }
 
@@ -196,6 +227,30 @@ export function EventCreate({
               </select>
             </Field>
           </div>
+
+          {/* Repetir — cria as ocorrências futuras */}
+          {!isBlock && (
+            <Field label="Repetir">
+              <div className="flex flex-wrap gap-1.5">
+                {REPEAT_OPTS.map((r) => (
+                  <button key={r.id} type="button" onClick={() => setRepeat(r.id)}
+                    className={cn('rounded-full border px-3 py-1.5 text-xs font-medium transition-colors',
+                      repeat === r.id ? 'border-brand bg-accent/60 text-accent-foreground' : 'border-border text-muted-foreground hover:bg-secondary')}>
+                    {r.label}
+                  </button>
+                ))}
+              </div>
+              {repeat !== 'nao' && (
+                <div className="mt-2 flex items-center gap-2">
+                  <span className="text-xs text-muted-foreground">Por</span>
+                  <select value={repeatCount} onChange={(e) => setRepeatCount(Number(e.target.value))} className="h-9 rounded-lg border border-input bg-card px-2 text-sm outline-none focus:ring-2 focus:ring-brand/30">
+                    {[2, 3, 4, 6, 8, 10, 12, 24, 52].map((n) => <option key={n} value={n}>{n}</option>)}
+                  </select>
+                  <span className="text-xs text-muted-foreground">vezes</span>
+                </div>
+              )}
+            </Field>
+          )}
 
           {/* Google Meet — para reuniões e calls */}
           {(type === 'reuniao' || type === 'call') && (
